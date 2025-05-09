@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 转发管理</title>
+    <style>
+        /* General Reset & Base */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            line-height: 1.6;
+            margin: 0;
+            background-color: #f0f2f5; /* Lighter gray background */
+            color: #333;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px; /* Softer radius */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); /* Softer shadow */
+            width: 100%;
+            max-width: 800px; /* Max width for better readability on large screens */
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 2em; /* Responsive font size */
+            color: #1a202c; /* Darker heading color */
+            margin-bottom: 25px;
+            text-align: center;
+            border-bottom: 2px solid #e2e8f0; /* Subtle separator */
+            padding-bottom: 15px;
+        }
+        h2 {
+            font-size: 1.5em;
+            color: #2d3748; /* Slightly lighter than h1 */
+            margin-top: 30px; /* More space above section titles */
+            margin-bottom: 20px;
+            border-bottom: 1px solid #edf2f7;
+            padding-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px; /* Increased space */
+            font-weight: 600; /* Slightly bolder */
+            color: #4a5568; /* Label color */
+            font-size: 0.95em;
+        }
+
+        /* Form Elements */
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 12px 15px; /* Increased padding */
+            margin-bottom: 20px; /* Increased space */
+            border: 1px solid #cbd5e0; /* Softer border */
+            border-radius: 6px; /* Softer radius */
+            font-size: 1em;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            border-color: #4299e1; /* Blue focus border */
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.3); /* Blue focus shadow */
+            outline: none;
+        }
+        textarea {
+            min-height: 100px; /* Increased min-height */
+            resize: vertical;
+        }
+        button {
+            background-color: #3182ce; /* Tailwind Blue 600 */
+            color: white;
+            padding: 12px 20px; /* Increased padding */
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em; /* Relative font size */
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+            margin-right: 10px;
+            margin-top: 5px; /* Add some top margin for buttons after inputs */
+        }
+        button:hover {
+            background-color: #2b6cb0; /* Tailwind Blue 700 */
+        }
+        button.danger { /* Specific class for danger buttons */
+            background-color: #e53e3e; /* Tailwind Red 600 */
+        }
+        button.danger:hover {
+            background-color: #c53030; /* Tailwind Red 700 */
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 40px; /* Increased space */
+            padding: 25px;
+            border: 1px solid #e2e8f0; /* Border for sections */
+            border-radius: 8px; /* Rounded corners for sections */
+            background-color: #fdfdff; /* Very light bg for sections */
+        }
+        .section:last-child {
+            border-bottom: 1px solid #e2e8f0; /* Keep border for last section if it's styled this way */
+        }
+         /* Auth section specific styling if needed */
+        #auth-section {
+            background-color: #fff; /* Keep auth section clean */
+            border: none;
+            padding: 20px 0; /* Less padding if no border */
+        }
+
+
+        /* Key List */
+        .key-list {
+            list-style: none;
+            padding: 0;
+            max-height: 200px; /* Max height with scroll */
+            overflow-y: auto; /* Scroll for overflow */
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px;
+        }
+        .key-list li {
+            background-color: #f7fafc; /* Lighter item background */
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #edf2f7;
+            word-break: break-all;
+        }
+        .key-list li:last-child {
+            margin-bottom: 0;
+        }
+        .key-list li span {
+            margin-right: 10px;
+            flex-grow: 1;
+        }
+        .key-list button { /* Style for delete buttons in list */
+            padding: 5px 10px;
+            font-size: 0.85em;
+            background-color: #e53e3e; /* Red for delete */
+            min-width: 70px; /* Ensure button text fits */
+        }
+        .key-list button:hover {
+            background-color: #c53030;
+        }
+
+
+        /* Utility */
+        .hidden {
+            display: none;
+        }
+
+        /* Message Area */
+        #message-area {
+            margin-top: 0; /* Adjusted as it's at the top */
+            margin-bottom: 20px; /* Space below message area */
+            padding: 12px 15px;
+            border-radius: 6px;
+            font-size: 0.95em;
+            text-align: center;
+        }
+        .success {
+            background-color: #c6f6d5; /* Tailwind Green 200 */
+            color: #2f855a; /* Tailwind Green 700 */
+            border: 1px solid #9ae6b4; /* Tailwind Green 300 */
+        }
+        .error {
+            background-color: #fed7d7; /* Tailwind Red 200 */
+            color: #c53030; /* Tailwind Red 700 */
+            border: 1px solid #feb2b2; /* Tailwind Red 300 */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API 转发管理面板</h1>
+
+        <div id="message-area" class="hidden"></div> <!-- Initially hidden, shown by JS -->
+
+        <!-- Login/Password Setup Section -->
+        <div id="auth-section" class="section">
+            <h2>安全认证</h2>
+            <div id="password-setup-form" class="hidden">
+                <label for="new-admin-password">设置初始管理员密码 (至少8位):</label>
+                <input type="password" id="new-admin-password" required>
+                <button id="set-initial-password-btn">设置密码</button>
+            </div>
+            <div id="login-form" class="hidden">
+                <label for="admin-password">管理员密码:</label>
+                <input type="password" id="admin-password" required>
+                <button id="login-btn">登录</button>
+            </div>
+            <div id="logout-section" class="hidden">
+                <p>已登录。</p>
+                <button id="logout-btn">登出</button>
+            </div>
+        </div>
+
+        <!-- Management Sections (hidden until logged in) -->
+        <div id="management-content" class="hidden">
+            <div class="section">
+                <h2>更改管理员密码</h2>
+                <label for="current-admin-password">当前密码 (登录时使用的密码):</label>
+                <input type="password" id="current-admin-password">
+                <label for="change-admin-password">新密码 (至少8位):</label>
+                <input type="password" id="change-admin-password">
+                <button id="change-password-btn">更改密码</button>
+            </div>
+
+            <div class="section">
+                <h2>触发密钥管理 (Trigger Keys)</h2>
+                <label for="trigger-keys-input">添加触发密钥 (逗号分隔):</label>
+                <textarea id="trigger-keys-input" placeholder="triggerKey1, triggerKey2"></textarea>
+                <button id="add-trigger-keys-btn">添加密钥</button>
+                <button id="clear-all-trigger-keys-btn" class="danger" style="margin-left: 10px;">清空所有触发密钥</button>
+                <h3>当前触发密钥 (<span id="trigger-keys-count">0</span>):</h3>
+                <ul id="trigger-keys-list" class="key-list"></ul>
+            </div>
+
+            <div class="section">
+                <h2>目标 API 密钥池管理 (API Pool Keys)</h2>
+                <label for="api-keys-input">添加目标 API 密钥 (逗号分隔):</label>
+                <textarea id="api-keys-input" placeholder="apiKey1, apiKey2"></textarea>
+                <button id="add-api-keys-btn">添加密钥</button>
+                <button id="clear-all-api-keys-btn" class="danger" style="margin-left: 10px;">清空所有 API 密钥</button>
+                <h3>当前目标 API 密钥 (<span id="api-keys-count">0</span>):</h3>
+                <ul id="api-keys-list" class="key-list"></ul>
+            </div>
+
+            <div class="section">
+                <h2>失败重试阈值</h2>
+                <label for="failure-threshold-input">轮询失败上限:</label>
+                <input type="number" id="failure-threshold-input" min="1" value="5">
+                <button id="set-failure-threshold-btn">设置阈值</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/admin/admin.js"></script>
+</body>
+</html>
