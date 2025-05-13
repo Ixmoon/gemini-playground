@@ -72,7 +72,6 @@ export async function isValidTriggerKey(key: string): Promise<boolean> {
 export async function clearAllTriggerKeys(): Promise<void> {
     const kv = ensureKv();
     await kv.delete(TRIGGER_KEYS_KEY);
-    console.log("All trigger keys have been cleared.");
 }
 
 // --- API Key (Pool) Management ---
@@ -103,12 +102,6 @@ export async function clearAllApiKeys(): Promise<void> {
     await kv.delete(API_KEYS_KEY);
     await kv.delete(API_KEY_POLL_INDEX_KEY);
 
-    // Delete all individual API key stats // REMOVED
-    // const iter = kv.list<ApiKeyStat>({ prefix: API_KEY_STATS_PREFIX }); // REMOVED
-    // for await (const entry of iter) { // REMOVED
-    //     await kv.delete(entry.key); // REMOVED
-    // } // REMOVED
-    console.log("All API keys and their stats have been cleared.");
 }
 
 // --- Failure Threshold Management ---
@@ -123,29 +116,6 @@ export async function setFailureThreshold(threshold: number): Promise<void> {
     await kv.set(FAILURE_THRESHOLD_KEY, threshold);
 }
 
-// --- API Key Polling and Stats Management --- // REMOVED STATS MANAGEMENT
-// interface ApiKeyStat { // REMOVED
-//     failureCount: number; // REMOVED
-//     // lastUsed?: number; // Could be added for more sophisticated polling // REMOVED
-// } // REMOVED
-
-// export async function getApiKeyStat(apiKey: string): Promise<ApiKeyStat> { // REMOVED
-//     const kv = ensureKv(); // REMOVED
-//     const result = await kv.get<ApiKeyStat>([...API_KEY_STATS_PREFIX, apiKey]); // REMOVED
-//     return result.value ?? { failureCount: 0 }; // REMOVED
-// } // REMOVED
-
-// export async function incrementApiKeyFailure(apiKey: string): Promise<void> { // REMOVED
-//     const kv = ensureKv(); // REMOVED
-//     const stat = await getApiKeyStat(apiKey); // REMOVED
-//     stat.failureCount += 1; // REMOVED
-//     await kv.set([...API_KEY_STATS_PREFIX, apiKey], stat); // REMOVED
-// } // REMOVED
-
-// export async function resetApiKeyStats(apiKey: string): Promise<void> { // REMOVED
-//     const kv = ensureKv(); // REMOVED
-//     await kv.set([...API_KEY_STATS_PREFIX, apiKey], { failureCount: 0 }); // REMOVED
-// } // REMOVED
 
 export async function getNextApiKeyPollIndex(): Promise<number> {
     const kv = ensureKv();
@@ -195,10 +165,4 @@ export async function clearAllForwardingData(): Promise<void> {
     await kv.delete(FAILURE_THRESHOLD_KEY);
     await kv.delete(API_KEY_POLL_INDEX_KEY);
 
-    // Delete all individual API key stats // REMOVED
-    // const iter = kv.list<ApiKeyStat>({ prefix: API_KEY_STATS_PREFIX }); // REMOVED
-    // for await (const entry of iter) { // REMOVED
-    //     await kv.delete(entry.key); // REMOVED
-    // } // REMOVED
-    console.log("All forwarding-related KV data has been cleared.");
 }

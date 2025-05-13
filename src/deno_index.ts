@@ -1,5 +1,5 @@
 import * as kvManager from './kv_manager.ts';
-import * as forwarder from './forwarder.ts';
+import * as forwarder from './forwarder/index.ts';
 import * as adminApi from './admin_api.ts';
 
 // Helper function to determine content type for static admin files
@@ -21,7 +21,6 @@ const getContentType = (path: string): string => {
 
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  console.log(`Request: ${req.method} ${req.url}`);
 
   // 1. Admin API Path
   // Check for Admin API requests first, as they might be under /admin/api/*
@@ -40,7 +39,6 @@ async function handleRequest(req: Request): Promise<Response> {
     try {
       const cwd = Deno.cwd();
       const fullPath = `${cwd}/src/admin/admin.html`;
-      console.log(`Attempting to serve admin panel: ${fullPath}`);
       const file = await Deno.readFile(fullPath);
       const contentType = getContentType(fullPath);
       return new Response(file, {
@@ -60,7 +58,6 @@ async function handleRequest(req: Request): Promise<Response> {
           return new Response('Invalid admin resource path.', { status: 400 });
       }
       const fullPath = `${cwd}/src/admin/${adminResource}`;
-      console.log(`Attempting to serve admin static resource: ${fullPath}`);
       const file = await Deno.readFile(fullPath);
       const contentType = getContentType(fullPath);
       return new Response(file, {
@@ -73,7 +70,6 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // If none of the above, it's a 404
-  console.log(`No route matched for ${url.pathname}. Returning 404.`);
   return new Response('Not Found', {
     status: 404,
     headers: { 'content-type': 'text/plain;charset=UTF-8' },
@@ -83,7 +79,6 @@ async function handleRequest(req: Request): Promise<Response> {
 async function main() {
   try {
     await kvManager.openKv();
-    console.log("Deno KV store opened successfully.");
     // Any other initial setup for admin or general app can go here if needed in the future
   } catch (error) {
     console.error("Failed to initialize KV store or perform initial setup:", error);
@@ -95,9 +90,6 @@ async function main() {
     port: port,
     handler: handleRequest
   });
-  console.log(`HTTP server running on port ${port}.`);
-  console.log(`Access the admin interface at http://localhost:${port}/admin`);
-  console.log(`API requests should be routed via paths defined in forwarder.ts (e.g., /api/...)`);
 }
 
 main();
