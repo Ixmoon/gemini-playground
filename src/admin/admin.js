@@ -86,19 +86,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderKeyList(listElement, keys, type, countElement) {
-        listElement.innerHTML = '';
-        const count = keys ? keys.length : 0;
+        if (!listElement) {
+            // Failsafe, though elements should exist. If not, can't render.
+            return;
+        }
+        listElement.innerHTML = ''; // Clear previous items
+
+        if (!Array.isArray(keys)) {
+            // If keys is not an array (e.g. API response was not as expected and .json().catch() resulted in {} )
+            // Display an error or empty state gracefully instead of throwing a runtime error.
+            listElement.innerHTML = '<li>数据加载错误或格式不正确</li>';
+            if (countElement) {
+                countElement.textContent = '0';
+            }
+            return;
+        }
+
+        const count = keys.length;
         if (countElement) {
             countElement.textContent = count;
         }
 
-        // If type is 'trigger', we don't render a list anymore.
-        // This function is now only for 'api' (pool) and 'model' (list of names)
+        // If type is 'trigger', this part of the logic is not typically used anymore for display,
+        // but keeping the check for robustness if it were called.
         if (type === 'trigger') {
-            // This part of the function will not be called for trigger keys with the new setup.
-            // If it were, we'd clear the list or handle it appropriately.
-            listElement.innerHTML = ''; // Clear if it was a list before
-            if (countElement) countElement.textContent = 'N/A'; // Or hide it
+            if (countElement) countElement.textContent = 'N/A'; // Or specific display for single trigger key
+            // Typically, trigger key is shown in an input field, not a list.
+            // If it were to be shown in a list and `keys` is an array (e.g. `[theKey]` or `[]`):
+            if (count === 0) listElement.innerHTML = '<li>未设置</li>';
+            else listElement.innerHTML = `<li>${keys[0]}</li>`; // Assuming single trigger key if in list
             return;
         }
 
@@ -106,7 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
             listElement.innerHTML = '<li>无</li>';
             return;
         }
-        keys.forEach(item => { 
+
+        keys.forEach(item => {
             const li = document.createElement('li');
             const itemSpan = document.createElement('span');
             itemSpan.textContent = item; 
@@ -133,27 +150,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadManagementData() {
-        // Load Single Trigger Key - now use session password (useSessionPassword defaults to true)
+        // Load Single Trigger Key
         const triggerKeyData = await apiRequest('/trigger-key'); 
         if (triggerKeyData && typeof triggerKeyData.key !== 'undefined') {
-            triggerKeyInput.value = triggerKeyData.key || '';
+            if (triggerKeyInput) triggerKeyInput.value = triggerKeyData.key || '';
         }
 
+        // API Pool Keys
         const apiKeysData = await apiRequest('/api-keys');
-        if (apiKeysData) renderKeyList(apiKeysList, Object.values(apiKeysData), 'api', apiKeysCountSpan);
+        if (apiKeysData) { // Handles null from apiRequest (server error)
+            renderKeyList(apiKeysList, Object.values(apiKeysData), 'api', apiKeysCountSpan);
+        } else if (apiKeysList) { 
+            // Explicitly render empty/error if apiRequest returned null (server error)
+            // This assumes apiKeysList itself is valid. renderKeyList will show "无" or its own error.
+            renderKeyList(apiKeysList, [], 'api', apiKeysCountSpan); 
+        }
 
         // Load Fallback API Key
         const fallbackApiKeyData = await apiRequest('/fallback-api-key');
         if (fallbackApiKeyData && typeof fallbackApiKeyData.key !== 'undefined') {
-            fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; 
+            if (fallbackApiKeyInput) fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; 
         }
         
+        // Secondary Pool Models
         const secondaryPoolModelsData = await apiRequest('/secondary-pool-models');
-        if (secondaryPoolModelsData) renderKeyList(secondaryPoolModelsList, secondaryPoolModelsData, 'model', secondaryPoolModelsCountSpan);
+        if (secondaryPoolModelsData) { // Handles null from apiRequest
+            renderKeyList(secondaryPoolModelsList, secondaryPoolModelsData, 'model', secondaryPoolModelsCountSpan);
+        } else if (secondaryPoolModelsList) {
+            // Explicitly render empty/error if apiRequest returned null
+            renderKeyList(secondaryPoolModelsList, [], 'model', secondaryPoolModelsCountSpan);
+        }
 
+        // Failure Threshold
         const thresholdData = await apiRequest('/failure-threshold');
         if (thresholdData && typeof thresholdData.threshold !== 'undefined') {
-            failureThresholdInput.value = thresholdData.threshold;
+            if (failureThresholdInput) failureThresholdInput.value = thresholdData.threshold;
         }
     }
 
