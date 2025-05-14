@@ -121,7 +121,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (count === 0) {
-            listElement.innerHTML = '<li>无</li>';
+            let placeholderItems = null;
+            let itemTypeLabel = "";
+
+            if (type === 'api') {
+                placeholderItems = ["示例 API 密钥 1 (占位符)", "示例 API 密钥 2 (占位符)", "示例 API 密钥 3 (占位符)"];
+                itemTypeLabel = "API密钥";
+            } else if (type === 'model') {
+                placeholderItems = ["示例模型 1 (占位符)", "示例模型 2 (占位符)", "示例模型 3 (占位符)"];
+                itemTypeLabel = "模型";
+            }
+
+            if (placeholderItems) {
+                placeholderItems.forEach(itemText => {
+                    const li = document.createElement('li');
+                    const itemSpan = document.createElement('span');
+                    itemSpan.textContent = itemText;
+                    li.appendChild(itemSpan);
+                    // No delete button for placeholder items
+                    listElement.appendChild(li);
+                });
+                if (countElement) countElement.textContent = `${placeholderItems.length} (占位符)`;
+            } else {
+                listElement.innerHTML = '<li>无</li>';
+            }
             return;
         }
 
@@ -162,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const apiKeysData = await apiRequest('/api-keys');
         let processedApiKeys = [];
         if (apiKeysData && typeof apiKeysData === 'object' && !Array.isArray(apiKeysData)) {
-            processedApiKeys = Object.values(apiKeysData);
+            processedApiKeys = Object.values(apiKeysData).filter(key => typeof key === 'string');
         } else if (apiKeysData !== null) { // Data received, but not the expected object format
             showMessage('收到的目标 API 密钥数据格式不正确。预期是一个对象。', 'error');
         }
@@ -179,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const secondaryPoolModelsData = await apiRequest('/secondary-pool-models');
         let processedSecondaryPoolModels = [];
         if (Array.isArray(secondaryPoolModelsData)) {
-            processedSecondaryPoolModels = secondaryPoolModelsData;
+            processedSecondaryPoolModels = secondaryPoolModelsData.filter(model => typeof model === 'string');
         } else if (secondaryPoolModelsData !== null) { // Data received, but not the expected array format
             showMessage('收到的备用池模型数据格式不正确。预期是一个数组。', 'error');
         }

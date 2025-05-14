@@ -61,22 +61,10 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
             // For now, we'll require a password for sensitive POST/DELETE if no session.
             // This is NOT secure for production.
             const adminPass = request.headers.get("X-Admin-Password");
-            if (!adminPass) return false; 
-
-            try {
-                const storedHash = await kvManager.getAdminPasswordHash();
-                if (!storedHash) {
-                    // No password set in KV, so authentication is not possible.
-                    // This implies password setup is not complete or hash is missing.
-                    return false; 
-                }
-                return await verifyPassword(adminPass, storedHash);
-            } catch (kvError) {
-                // If any error occurs trying to get the password hash (e.g., KV unavailable)
-                // then authentication cannot be confirmed. Log the error server-side.
-                console.error("Error in isAdminAuthenticated while fetching stored hash:", kvError);
-                return false; // Treat as not authenticated
-            }
+            if (!adminPass) return false;
+            const storedHash = await kvManager.getAdminPasswordHash();
+            if (!storedHash) return false; // No password set
+            return verifyPassword(adminPass, storedHash);
         };
 
 
