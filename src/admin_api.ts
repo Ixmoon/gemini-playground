@@ -93,12 +93,12 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
         
         // --- Single Trigger Key Management ---
         if (pathname === "/api/admin/trigger-key") { // Renamed endpoint for clarity
+            if (!await isAdminAuthenticated()) { // Protect ALL operations on this endpoint
+                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
             if (method === "GET") {
                 const key = await kvManager.getTriggerKey();
                 return new Response(JSON.stringify({ key: key }), { status: 200, headers: { "Content-Type": "application/json" } });
-            }
-            if (!await isAdminAuthenticated() && method !== "GET") { // Protect write operations
-                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
             if (method === "POST") { // Sets or clears the single trigger key
                 const { key } = await request.json(); // Expects { key: "theTriggerKey" } or { key: null } or { key: "" }
@@ -120,15 +120,15 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
 
         // --- API Keys (Pool) Management ---
         if (pathname === "/api/admin/api-keys") {
+            if (!await isAdminAuthenticated()) { // Protect ALL operations
+                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
             if (method === "GET") {
                 const keys = await kvManager.getApiKeys();
                 // For security, might not want to return full API keys.
                 // Consider returning partial keys or just a count.
                 // For this admin panel, we'll return them for management.
                 return new Response(JSON.stringify(keys), { status: 200, headers: { "Content-Type": "application/json" } });
-            }
-            if (!await isAdminAuthenticated() && method !== "GET") {
-                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
             if (method === "POST") {
                 const { keys } = await request.json(); // Expects { keys: "key1,key2,key3" } or { keys: ["key1", "key2"] }
@@ -178,12 +178,12 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
 
         // --- Fallback API Key Management ---
         if (pathname === "/api/admin/fallback-api-key") {
+            if (!await isAdminAuthenticated()) { // Protect ALL operations
+                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
             if (method === "GET") {
                 const key = await kvManager.getFallbackApiKey();
                 return new Response(JSON.stringify({ key: key }), { status: 200, headers: { "Content-Type": "application/json" } });
-            }
-            if (!await isAdminAuthenticated() && method !== "GET") { // Protect write operations
-                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
             if (method === "POST") { // Sets or clears the single fallback key
                 const { key } = await request.json(); // Expects { key: "theFallbackApiKey" } or { key: null } or { key: "" }
@@ -205,12 +205,12 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
 
         // --- Fallback Trigger Model Names Management (formerly Secondary Pool Model Names) ---
         if (pathname === "/api/admin/secondary-pool-models") {
+            if (!await isAdminAuthenticated()) { // Protect ALL operations
+                return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
             if (method === "GET") {
                 const modelNames = await kvManager.getSecondaryPoolModelNames();
                 return new Response(JSON.stringify(Array.from(modelNames)), { status: 200, headers: { "Content-Type": "application/json" } });
-            }
-            if (!await isAdminAuthenticated() && method !== "GET") {
-                return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
             if (method === "POST") { // Overwrites existing list
                 const { models } = await request.json(); // Expects { models: "model1,model2" } or { models: ["model1", "model2"] }
@@ -240,12 +240,12 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
 
         // --- Failure Threshold Management ---
         if (pathname === "/api/admin/failure-threshold") {
+            if (!await isAdminAuthenticated()) { // Protect ALL operations
+                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
             if (method === "GET") {
                 const threshold = await kvManager.getFailureThreshold();
                 return new Response(JSON.stringify({ threshold }), { status: 200, headers: { "Content-Type": "application/json" } });
-            }
-             if (!await isAdminAuthenticated() && method !== "GET") {
-                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
             if (method === "POST") {
                 const { threshold } = await request.json();

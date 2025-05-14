@@ -56,7 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function apiRequest(endpoint, method = 'GET', body = null, useSessionPassword = true) {
         const headers = { 'Content-Type': 'application/json' };
-        if (useSessionPassword && currentSessionPassword && method !== 'GET') {
+        // Send password for all methods if useSessionPassword is true and password exists
+        if (useSessionPassword && currentSessionPassword) { 
             headers['X-Admin-Password'] = currentSessionPassword;
         }
 
@@ -132,28 +133,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadManagementData() {
-        // Load Single Trigger Key
-        const triggerKeyData = await apiRequest('/trigger-key', 'GET', null, false);
+        // Load Single Trigger Key - now use session password (useSessionPassword defaults to true)
+        const triggerKeyData = await apiRequest('/trigger-key'); 
         if (triggerKeyData && typeof triggerKeyData.key !== 'undefined') {
             triggerKeyInput.value = triggerKeyData.key || '';
         }
 
-        const apiKeysData = await apiRequest('/api-keys', 'GET', null, false);
-        // apiKeysData is a Record<string, string>, renderKeyList expects an array for 'api' type.
-        // We should pass the values (the API keys themselves) or keys (the identifiers).
-        // Since identifiers are the same as keys in the current setup, Object.values() is appropriate.
+        const apiKeysData = await apiRequest('/api-keys');
         if (apiKeysData) renderKeyList(apiKeysList, Object.values(apiKeysData), 'api', apiKeysCountSpan);
 
         // Load Fallback API Key
-        const fallbackApiKeyData = await apiRequest('/fallback-api-key', 'GET', null, false);
+        const fallbackApiKeyData = await apiRequest('/fallback-api-key');
         if (fallbackApiKeyData && typeof fallbackApiKeyData.key !== 'undefined') {
-            fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; // Set to empty string if null
+            fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; 
         }
         
-        const secondaryPoolModelsData = await apiRequest('/secondary-pool-models', 'GET', null, false);
+        const secondaryPoolModelsData = await apiRequest('/secondary-pool-models');
         if (secondaryPoolModelsData) renderKeyList(secondaryPoolModelsList, secondaryPoolModelsData, 'model', secondaryPoolModelsCountSpan);
 
-        const thresholdData = await apiRequest('/failure-threshold', 'GET', null, false);
+        const thresholdData = await apiRequest('/failure-threshold');
         if (thresholdData && typeof thresholdData.threshold !== 'undefined') {
             failureThresholdInput.value = thresholdData.threshold;
         }
