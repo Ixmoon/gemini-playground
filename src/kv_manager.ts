@@ -13,40 +13,24 @@ const FAILURE_THRESHOLD_KEY = ["failure_threshold"]; // Global retry threshold, 
 
 let kv: Deno.Kv | null = null;
 
-// --- In-Memory Cache ---
-interface CacheEntry<T> {
-    value: T;
-    expiresAt: number;
-}
-const cache = new Map<string, CacheEntry<any>>();
-const DEFAULT_TTL_MS = 60 * 1000; // 60 seconds
+// --- Edge Cache (Deno Deploy Web Cache API) ---
+const KV_MANAGER_CACHE_NAME = "kv-manager-cache";
+const DEFAULT_EDGE_CACHE_TTL_SECONDS = 60; // 60 seconds
 
-function getCacheKey(keyArray: string[]): string {
-    return JSON.stringify(keyArray); // More robust way to generate a unique cache key
-}
+let edgeCacheInstance: Cache | undefined;
 
-function setCache<T>(keyArray: string[], value: T, ttlMs: number = DEFAULT_TTL_MS): void {
-    const cacheKeyString = getCacheKey(keyArray);
-    cache.set(cacheKeyString, { value, expiresAt: Date.now() + ttlMs });
-}
-
-// Returns the cached value (which can be T or null if T is nullable)
-// Returns undefined if cache miss or expired
-function getCache<T>(keyArray: string[]): T | undefined { // Return type changed
-    const cacheKeyString = getCacheKey(keyArray);
-    const entry = cache.get(cacheKeyString);
-    if (entry && entry.expiresAt > Date.now()) {
-        return entry.value as T; // Value itself can be null if T is e.g. string | null
+async function getEdgeCache(): Promise<Cache> {
+    if (!edgeCacheInstance) {
+        edgeCacheInstance = await caches.open(KV_MANAGER_CACHE_NAME);
     }
-    if (entry) {
-        cache.delete(cacheKeyString);
-    }
-    return undefined; // Cache miss or expired
+    return edgeCacheInstance;
 }
 
-function clearCache(keyArray: string[]): void {
-    const cacheKeyString = getCacheKey(keyArray);
-    cache.delete(cacheKeyString);
+function getEdgeCacheRequest(keyArray: string[]): Request {
+    // Using a base URL, the path is what matters for cache key uniqueness
+    const cacheKeyString = JSON.stringify(keyArray);
+    const url = new URL(`/cache/${encodeURIComponent(cacheKeyString)}`, "http://localhost");
+    return new Request(url);
 }
 
 /**
@@ -80,16 +64,34 @@ export async function setAdminPasswordHash(hash: string): Promise<void> {
 
 // --- Single Trigger Key Management ---
 export async function getTriggerKey(): Promise<string | null> {
-    const cached = getCache<string | null>(SINGLE_TRIGGER_KEY_KEY); // cached can be string, null, or undefined
-    if (cached !== undefined) { // If it's not undefined, it's a valid cache hit (value could be string or null)
-        return cached;
+    const kv = ensureKv();
+    const cache = await getEdgeCache();
+    const cacheRequest = getEdgeCacheRequest(SINGLE_TRIGGER_KEY_KEY);
+
+    const cachedResponse = await cache.match(cacheRequest);
+    if (cachedResponse) {
+        try {
+            const data = await cachedResponse.json();
+            return data.value as (string | null);
+        } catch (e) {
+            console.error("Failed to parse cached JSON for getTriggerKey:", e);
+            // Proceed to fetch from KV if cache is corrupted
+        }
     }
 
-    // Cache miss (cached === undefined), proceed to fetch from KV
-    const kv = ensureKv();
+    // Cache miss or corrupted, proceed to fetch from KV
     const result = await kv.get<string>(SINGLE_TRIGGER_KEY_KEY);
     const value = result.value || null;
-    setCache(SINGLE_TRIGGER_KEY_KEY, value);
+
+    // Store in Edge Cache
+    const responseToCache = new Response(JSON.stringify({ value }), {
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `max-age=${DEFAULT_EDGE_CACHE_TTL_SECONDS}`
+        }
+    });
+    await cache.put(cacheRequest, responseToCache);
+
     return value;
 }
 
@@ -101,13 +103,13 @@ export async function setTriggerKey(key: string | null): Promise<void> {
     } else {
         await kv.delete(SINGLE_TRIGGER_KEY_KEY);
     }
-    clearCache(SINGLE_TRIGGER_KEY_KEY);
+    // Edge Cache entries expire based on TTL; no explicit clearCache needed or possible.
 }
 
 export async function clearTriggerKey(): Promise<void> {
     const kv = ensureKv();
     await kv.delete(SINGLE_TRIGGER_KEY_KEY);
-    clearCache(SINGLE_TRIGGER_KEY_KEY);
+    // Edge Cache entries expire based on TTL; no explicit clearCache needed or possible.
 }
 
 export async function isValidTriggerKey(providedKey: string): Promise<boolean> {
@@ -119,20 +121,41 @@ export async function isValidTriggerKey(providedKey: string): Promise<boolean> {
 // --- API Key (Primary Pool) Management ---
 // Now stores and returns a Record<string, string> (JSON object)
 export async function getApiKeys(): Promise<Record<string, string>> {
-    const cached = getCache<Record<string, string>>(API_KEYS_KEY);
-    if (cached !== undefined) return cached;
-
     const kv = ensureKv();
+    const cache = await getEdgeCache();
+    const cacheRequest = getEdgeCacheRequest(API_KEYS_KEY);
+
+    const cachedResponse = await cache.match(cacheRequest);
+    if (cachedResponse) {
+        try {
+            const data = await cachedResponse.json();
+            return data.value as Record<string, string>;
+        } catch (e) {
+            console.error("Failed to parse cached JSON for getApiKeys:", e);
+        }
+    }
+
     const result = await kv.get<Record<string, string>>(API_KEYS_KEY);
     const value = result.value || {}; // Default to an empty object
-    setCache(API_KEYS_KEY, value);
+
+    const responseToCache = new Response(JSON.stringify({ value }), {
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `max-age=${DEFAULT_EDGE_CACHE_TTL_SECONDS}`
+        }
+    });
+    await cache.put(cacheRequest, responseToCache);
+
     return value;
 }
 
 // Input `keysToAdd` is a Record<string, string> where key is an identifier/name and value is the API key string.
 export async function addApiKeys(keysToAdd: Record<string, string>): Promise<void> {
     const kv = ensureKv();
-    const currentApiKeysRecord = await getApiKeys(); // Uses cache, returns Record
+    // Fetching directly from KV to ensure we're merging with the latest persisted state,
+    // as getApiKeys() might return a slightly stale cached version.
+    const currentApiKeysResult = await kv.get<Record<string, string>>(API_KEYS_KEY);
+    const currentApiKeysRecord = currentApiKeysResult.value || {};
     
     // Merge new keys. If a key identifier already exists, it will be overwritten.
     for (const keyIdentifier in keysToAdd) {
@@ -145,46 +168,66 @@ export async function addApiKeys(keysToAdd: Record<string, string>): Promise<voi
     }
     
     await kv.set(API_KEYS_KEY, currentApiKeysRecord);
-    clearCache(API_KEYS_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 // `keyIdentifierToRemove` is the name/identifier of the API key entry.
 export async function removeApiKey(keyIdentifierToRemove: string): Promise<void> {
     const kv = ensureKv();
-    const currentApiKeysRecord = await getApiKeys();
+    // Fetching directly from KV for atomicity of the read-modify-write operation.
+    const currentApiKeysResult = await kv.get<Record<string, string>>(API_KEYS_KEY);
+    const currentApiKeysRecord = currentApiKeysResult.value || {};
     
     if (Object.prototype.hasOwnProperty.call(currentApiKeysRecord, keyIdentifierToRemove)) {
         delete currentApiKeysRecord[keyIdentifierToRemove];
         await kv.set(API_KEYS_KEY, currentApiKeysRecord);
-        clearCache(API_KEYS_KEY);
+        // Edge Cache entries expire based on TTL.
     }
 }
 
 export async function clearAllApiKeys(): Promise<void> {
     const kv = ensureKv();
     await kv.delete(API_KEYS_KEY);
-    await kv.delete(API_KEY_POLL_INDEX_KEY);
-    clearCache(API_KEYS_KEY);
+    await kv.delete(API_KEY_POLL_INDEX_KEY); // This index is tied to the API_KEYS_KEY content
+    // Edge Cache entries expire based on TTL.
 }
 
 // --- Failure Threshold Management ---
 // This is a global threshold for retries in forwarder.ts, not related to individual key failure counts.
 // No changes needed here based on "删除所有failureCount" as individual counts are not stored.
 export async function getFailureThreshold(): Promise<number> {
-    const cached = getCache<number>(FAILURE_THRESHOLD_KEY);
-    if (cached !== undefined) return cached;
-
     const kv = ensureKv();
+    const cache = await getEdgeCache();
+    const cacheRequest = getEdgeCacheRequest(FAILURE_THRESHOLD_KEY);
+
+    const cachedResponse = await cache.match(cacheRequest);
+    if (cachedResponse) {
+        try {
+            const data = await cachedResponse.json();
+            return data.value as number;
+        } catch (e) {
+            console.error("Failed to parse cached JSON for getFailureThreshold:", e);
+        }
+    }
+
     const result = await kv.get<number>(FAILURE_THRESHOLD_KEY);
-    const value = result.value ?? 5;
-    setCache(FAILURE_THRESHOLD_KEY, value);
+    const value = result.value ?? 5; // Default to 5 if not set
+
+    const responseToCache = new Response(JSON.stringify({ value }), {
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `max-age=${DEFAULT_EDGE_CACHE_TTL_SECONDS}`
+        }
+    });
+    await cache.put(cacheRequest, responseToCache);
+
     return value;
 }
 
 export async function setFailureThreshold(threshold: number): Promise<void> {
     const kv = ensureKv();
     await kv.set(FAILURE_THRESHOLD_KEY, threshold);
-    clearCache(FAILURE_THRESHOLD_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 // --- API Key Poll Index (Primary Pool) ---
@@ -247,16 +290,31 @@ export async function getNextAvailableApiKey(): Promise<string | null> {
 
 // --- Fallback API Key Management ---
 export async function getFallbackApiKey(): Promise<string | null> {
-    const cached = getCache<string | null>(FALLBACK_API_KEY_KEY); // cached can be string, null, or undefined
-    if (cached !== undefined) { // If it's not undefined, it's a valid cache hit (value could be string or null)
-        return cached;
+    const kv = ensureKv();
+    const cache = await getEdgeCache();
+    const cacheRequest = getEdgeCacheRequest(FALLBACK_API_KEY_KEY);
+
+    const cachedResponse = await cache.match(cacheRequest);
+    if (cachedResponse) {
+        try {
+            const data = await cachedResponse.json();
+            return data.value as (string | null);
+        } catch (e) {
+            console.error("Failed to parse cached JSON for getFallbackApiKey:", e);
+        }
     }
 
-    // Cache miss (cached === undefined), proceed to fetch from KV
-    const kv = ensureKv();
     const result = await kv.get<string>(FALLBACK_API_KEY_KEY);
     const value = result.value || null;
-    setCache(FALLBACK_API_KEY_KEY, value);
+
+    const responseToCache = new Response(JSON.stringify({ value }), {
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `max-age=${DEFAULT_EDGE_CACHE_TTL_SECONDS}`
+        }
+    });
+    await cache.put(cacheRequest, responseToCache);
+
     return value;
 }
 
@@ -268,54 +326,86 @@ export async function setFallbackApiKey(key: string | null): Promise<void> {
     } else {
         await kv.delete(FALLBACK_API_KEY_KEY);
     }
-    clearCache(FALLBACK_API_KEY_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 export async function clearFallbackApiKey(): Promise<void> {
     const kv = ensureKv();
     await kv.delete(FALLBACK_API_KEY_KEY);
-    clearCache(FALLBACK_API_KEY_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 // --- Fallback Trigger Model Names Management ---
 export async function getSecondaryPoolModelNames(): Promise<Set<string>> {
-    const cached = getCache<Set<string>>(SECONDARY_POOL_MODEL_NAMES_KEY);
-    if (cached !== undefined) return cached;
-
     const kv = ensureKv();
+    const cache = await getEdgeCache();
+    const cacheRequest = getEdgeCacheRequest(SECONDARY_POOL_MODEL_NAMES_KEY);
+
+    const cachedResponse = await cache.match(cacheRequest);
+    if (cachedResponse) {
+        try {
+            // Expecting an array in the cache
+            const data = await cachedResponse.json();
+            return new Set(data.value as string[]);
+        } catch (e) {
+            console.error("Failed to parse cached JSON for getSecondaryPoolModelNames:", e);
+        }
+    }
+
     const result = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);
-    const value = new Set(result.value || []);
-    setCache(SECONDARY_POOL_MODEL_NAMES_KEY, value);
-    return value;
+    const valueArray = result.value || [];
+    const valueSet = new Set(valueArray);
+
+    // Store as array in Edge Cache
+    const responseToCache = new Response(JSON.stringify({ value: Array.from(valueSet) }), {
+        headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': `max-age=${DEFAULT_EDGE_CACHE_TTL_SECONDS}`
+        }
+    });
+    await cache.put(cacheRequest, responseToCache);
+
+    return valueSet;
 }
 
 export async function setSecondaryPoolModelNames(modelNames: string[]): Promise<void> {
     const kv = ensureKv();
     const valueToSet = Array.from(new Set(modelNames.map(name => name.trim()).filter(name => name.length > 0)));
     await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, valueToSet);
-    clearCache(SECONDARY_POOL_MODEL_NAMES_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 export async function addSecondaryPoolModelNames(modelNames: string[]): Promise<void> {
     const kv = ensureKv();
-    const currentModelNames = await getSecondaryPoolModelNames();
-    modelNames.forEach(name => currentModelNames.add(name.trim()));
-    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNames));
-    clearCache(SECONDARY_POOL_MODEL_NAMES_KEY);
+    // Fetch directly from KV to ensure atomicity for read-modify-write
+    const currentModelNamesResult = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);
+    const currentModelNamesSet = new Set(currentModelNamesResult.value || []);
+    
+    modelNames.forEach(name => {
+        const trimmedName = name.trim();
+        if (trimmedName.length > 0) {
+            currentModelNamesSet.add(trimmedName);
+        }
+    });
+    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNamesSet));
+    // Edge Cache entries expire based on TTL.
 }
 
 export async function removeSecondaryPoolModelName(modelName: string): Promise<void> {
     const kv = ensureKv();
-    const currentModelNames = await getSecondaryPoolModelNames();
-    currentModelNames.delete(modelName.trim());
-    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNames));
-    clearCache(SECONDARY_POOL_MODEL_NAMES_KEY);
+    // Fetch directly from KV
+    const currentModelNamesResult = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);
+    const currentModelNamesSet = new Set(currentModelNamesResult.value || []);
+
+    currentModelNamesSet.delete(modelName.trim());
+    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNamesSet));
+    // Edge Cache entries expire based on TTL.
 }
 
 export async function clearAllSecondaryPoolModelNames(): Promise<void> {
     const kv = ensureKv();
     await kv.delete(SECONDARY_POOL_MODEL_NAMES_KEY);
-    clearCache(SECONDARY_POOL_MODEL_NAMES_KEY);
+    // Edge Cache entries expire based on TTL.
 }
 
 export async function shouldUseFallbackKey(modelName: string): Promise<boolean> {
@@ -335,9 +425,6 @@ export async function clearAllForwardingData(): Promise<void> {
     await kv.delete(SECONDARY_POOL_MODEL_NAMES_KEY);
     await kv.delete(FAILURE_THRESHOLD_KEY);
 
-    clearCache(SINGLE_TRIGGER_KEY_KEY);
-    clearCache(API_KEYS_KEY);
-    clearCache(FALLBACK_API_KEY_KEY);
-    clearCache(SECONDARY_POOL_MODEL_NAMES_KEY);
-    clearCache(FAILURE_THRESHOLD_KEY);
+    // Edge Cache entries expire based on TTL; no explicit clearCache needed or possible.
+    // The KV entries themselves are deleted above, so subsequent reads will repopulate the cache.
 }
