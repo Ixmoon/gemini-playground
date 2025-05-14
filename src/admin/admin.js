@@ -56,8 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function apiRequest(endpoint, method = 'GET', body = null, useSessionPassword = true) {
         const headers = { 'Content-Type': 'application/json' };
-        // Send password for all methods if useSessionPassword is true and password exists
-        if (useSessionPassword && currentSessionPassword) { 
+        if (useSessionPassword && currentSessionPassword && method !== 'GET') {
             headers['X-Admin-Password'] = currentSessionPassword;
         }
 
@@ -86,37 +85,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderKeyList(listElement, keys, type, countElement) {
-        if (!listElement) {
-            // Failsafe, though elements should exist. If not, can't render.
-            return;
-        }
-        listElement.innerHTML = ''; // Clear previous items
-
-        if (!Array.isArray(keys)) {
-            // If keys is not an array (e.g. API response was not as expected and .json().catch() resulted in {} )
-            // Display an error or empty state gracefully instead of throwing a runtime error.
-            listElement.innerHTML = '<li>数据加载错误或格式不正确</li>';
-            if (countElement) {
-                countElement.textContent = '0';
-            }
-            return;
-        }
-
-        // Filter keys to ensure all items are non-null strings before rendering
-        const validKeys = keys.filter(key => typeof key === 'string' && key !== null);
-
-        const count = validKeys.length; // Use length of filtered keys
+        listElement.innerHTML = '';
+        const count = keys ? keys.length : 0;
         if (countElement) {
             countElement.textContent = count;
         }
 
-        // If type is 'trigger', this part of the logic is not typically used anymore for display,
-        // but keeping the check for robustness if it were called.
+        // If type is 'trigger', we don't render a list anymore.
+        // This function is now only for 'api' (pool) and 'model' (list of names)
         if (type === 'trigger') {
-            if (countElement) countElement.textContent = 'N/A'; // Or specific display for single trigger key
-            // Typically, trigger key is shown in an input field, not a list.
-            if (count === 0) listElement.innerHTML = '<li>未设置</li>';
-            else listElement.innerHTML = `<li>${validKeys[0]}</li>`; // Use validKeys
+            // This part of the function will not be called for trigger keys with the new setup.
+            // If it were, we'd clear the list or handle it appropriately.
+            listElement.innerHTML = ''; // Clear if it was a list before
+            if (countElement) countElement.textContent = 'N/A'; // Or hide it
             return;
         }
 
@@ -125,7 +106,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        validKeys.forEach(item => { // Iterate over filtered validKeys
+        // Filter out non-string or null items to prevent errors during rendering
+        const validItems = keys.filter(key => typeof key === 'string' && key !== null);
+
+        if (validItems.length === 0) {
+            listElement.innerHTML = `<li>无有效${type === 'api' ? '密钥' : '模型'}可显示。</li>`;
+            if (countElement) { // Update count if all items were invalid
+                countElement.textContent = '0';
+            }
+            return;
+        }
+
+        validItems.forEach(item => { 
             const li = document.createElement('li');
             const itemSpan = document.createElement('span');
             itemSpan.textContent = item; 
@@ -153,43 +145,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadManagementData() {
         // Load Single Trigger Key
-        const triggerKeyData = await apiRequest('/trigger-key'); 
+        const triggerKeyData = await apiRequest('/trigger-key', 'GET', null, false);
         if (triggerKeyData && typeof triggerKeyData.key !== 'undefined') {
-            if (triggerKeyInput) triggerKeyInput.value = triggerKeyData.key || '';
+            triggerKeyInput.value = triggerKeyData.key || '';
         }
 
-        // API Pool Keys
-        const apiKeysData = await apiRequest('/api-keys');
+        const apiKeysData = await apiRequest('/api-keys', 'GET', null, false);
         let processedApiKeys = [];
         if (apiKeysData && typeof apiKeysData === 'object' && !Array.isArray(apiKeysData)) {
-            processedApiKeys = Object.values(apiKeysData).filter(key => typeof key === 'string');
-        } else if (apiKeysData !== null) { // Data received, but not the expected object format
-            showMessage('收到的目标 API 密钥数据格式不正确。预期是一个对象。', 'error');
+            processedApiKeys = Object.values(apiKeysData);
+        } else if (apiKeysData !== null) { // apiKeysData is not null, but not the expected object format
+            showMessage('从服务器收到的目标 API 密钥数据格式不正确。', 'error');
         }
-        // Ensure apiKeysList exists before rendering. Render with processedApiKeys (even if empty).
+        // Ensure apiKeysList exists before rendering.
         if (apiKeysList) renderKeyList(apiKeysList, processedApiKeys, 'api', apiKeysCountSpan);
 
         // Load Fallback API Key
-        const fallbackApiKeyData = await apiRequest('/fallback-api-key');
+        const fallbackApiKeyData = await apiRequest('/fallback-api-key', 'GET', null, false);
         if (fallbackApiKeyData && typeof fallbackApiKeyData.key !== 'undefined') {
-            if (fallbackApiKeyInput) fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; 
+            fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; // Set to empty string if null
         }
         
-        // Secondary Pool Models
-        const secondaryPoolModelsData = await apiRequest('/secondary-pool-models');
+        const secondaryPoolModelsData = await apiRequest('/secondary-pool-models', 'GET', null, false);
         let processedSecondaryPoolModels = [];
         if (Array.isArray(secondaryPoolModelsData)) {
-            processedSecondaryPoolModels = secondaryPoolModelsData.filter(model => typeof model === 'string');
-        } else if (secondaryPoolModelsData !== null) { // Data received, but not the expected array format
-            showMessage('收到的备用池模型数据格式不正确。预期是一个数组。', 'error');
+            processedSecondaryPoolModels = secondaryPoolModelsData;
+        } else if (secondaryPoolModelsData !== null) { // secondaryPoolModelsData is not null, but not an array
+            showMessage('从服务器收到的备用池模型数据格式不正确。', 'error');
         }
-        // Ensure secondaryPoolModelsList exists. Render with processed data.
+        // Ensure secondaryPoolModelsList exists before rendering.
         if (secondaryPoolModelsList) renderKeyList(secondaryPoolModelsList, processedSecondaryPoolModels, 'model', secondaryPoolModelsCountSpan);
 
-        // Failure Threshold
-        const thresholdData = await apiRequest('/failure-threshold');
+        const thresholdData = await apiRequest('/failure-threshold', 'GET', null, false);
         if (thresholdData && typeof thresholdData.threshold !== 'undefined') {
-            if (failureThresholdInput) failureThresholdInput.value = thresholdData.threshold;
+            failureThresholdInput.value = thresholdData.threshold;
         }
     }
 
