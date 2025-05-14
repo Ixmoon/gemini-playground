@@ -91,49 +91,32 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
             }
         }
         
-        // --- Trigger Keys Management ---
-        if (pathname === "/api/admin/trigger-keys") {
+        // --- Single Trigger Key Management ---
+        if (pathname === "/api/admin/trigger-key") { // Renamed endpoint for clarity
             if (method === "GET") {
-                const keys = await kvManager.getTriggerKeys();
-                return new Response(JSON.stringify(Array.from(keys)), { status: 200, headers: { "Content-Type": "application/json" } });
+                const key = await kvManager.getTriggerKey();
+                return new Response(JSON.stringify({ key: key }), { status: 200, headers: { "Content-Type": "application/json" } });
             }
             if (!await isAdminAuthenticated() && method !== "GET") { // Protect write operations
                  return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
             }
-            if (method === "POST") {
-                const { keys } = await request.json(); // Expects { keys: "key1,key2,key3" } or { keys: ["key1", "key2"] }
-                let keysArray: string[];
-                if (typeof keys === 'string') {
-                    keysArray = keys.split(',').map(k => k.trim()).filter(k => k.length > 0);
-                } else if (Array.isArray(keys)) {
-                    keysArray = keys.map(k => String(k).trim()).filter(k => k.length > 0);
-                } else {
-                    return new Response(JSON.stringify({ error: "Invalid 'keys' format. Provide a comma-separated string or an array of strings." }), { status: 400 });
+            if (method === "POST") { // Sets or clears the single trigger key
+                const { key } = await request.json(); // Expects { key: "theTriggerKey" } or { key: null } or { key: "" }
+                if (key === undefined) {
+                    return new Response(JSON.stringify({ error: "Invalid 'key' format. Expected a string or null." }), { status: 400 });
                 }
-                if (keysArray.length === 0) {
-                     return new Response(JSON.stringify({ error: "No keys provided to add." }), { status: 400 });
+                if (typeof key !== 'string' && key !== null) {
+                     return new Response(JSON.stringify({ error: "Trigger key must be a string or null." }), { status: 400 });
                 }
-                await kvManager.addTriggerKeys(keysArray);
-                return new Response(JSON.stringify({ message: "Trigger keys added." }), { status: 200 });
+                await kvManager.setTriggerKey(key); // Handles empty string or null as clear
+                return new Response(JSON.stringify({ message: "Trigger key updated." }), { status: 200 });
             }
-            if (method === "DELETE") {
-                const { key } = await request.json();
-                if (!key || typeof key !== 'string') {
-                     return new Response(JSON.stringify({ error: "Missing or invalid 'key' to delete." }), { status: 400 });
-                }
-                await kvManager.removeTriggerKey(key);
-                return new Response(JSON.stringify({ message: `Trigger key '${key}' removed.` }), { status: 200 });
+            if (method === "DELETE") { // Clears the trigger key
+                await kvManager.clearTriggerKey();
+                return new Response(JSON.stringify({ message: "Trigger key cleared." }), { status: 200 });
             }
         }
-
-        // Endpoint to clear all trigger keys
-        if (pathname === "/api/admin/trigger-keys/all" && method === "DELETE") {
-            if (!await isAdminAuthenticated()) {
-                return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
-            }
-            await kvManager.clearAllTriggerKeys();
-            return new Response(JSON.stringify({ message: "All trigger keys cleared." }), { status: 200 });
-        }
+        // The old "/api/admin/trigger-keys/all" is now covered by DELETE on "/api/admin/trigger-key"
 
         // --- API Keys (Pool) Management ---
         if (pathname === "/api/admin/api-keys") {
@@ -155,21 +138,32 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
                 } else if (Array.isArray(keys)) {
                     keysArray = keys.map(k => String(k).trim()).filter(k => k.length > 0);
                 } else {
-                    return new Response(JSON.stringify({ error: "Invalid 'keys' format." }), { status: 400 });
+                    return new Response(JSON.stringify({ error: "Invalid 'keys' format. Expected comma-separated string or array of strings." }), { status: 400 });
                 }
                 if (keysArray.length === 0) {
                      return new Response(JSON.stringify({ error: "No keys provided to add." }), { status: 400 });
                 }
-                await kvManager.addApiKeys(keysArray);
-                return new Response(JSON.stringify({ message: "API keys added." }), { status: 200 });
+
+                // Convert string[] to Record<string, string>
+                // Using the API key itself as the identifier for now.
+                // This might need a more sophisticated approach if user-defined identifiers are desired via UI.
+                const keysToAddAsRecord: Record<string, string> = {};
+                for (const apiKeyStr of keysArray) {
+                    keysToAddAsRecord[apiKeyStr] = apiKeyStr; 
+                }
+
+                await kvManager.addApiKeys(keysToAddAsRecord);
+                return new Response(JSON.stringify({ message: "API keys added/updated." }), { status: 200 });
             }
             if (method === "DELETE") {
-                const { key } = await request.json();
+                // The `key` here should be the identifier used in the Record.
+                // If we used the API key string itself as the identifier, then this is fine.
+                const { key } = await request.json(); 
                  if (!key || typeof key !== 'string') {
-                     return new Response(JSON.stringify({ error: "Missing or invalid 'key' to delete." }), { status: 400 });
+                     return new Response(JSON.stringify({ error: "Missing or invalid 'key' (identifier) to delete." }), { status: 400 });
                 }
-                await kvManager.removeApiKey(key);
-                return new Response(JSON.stringify({ message: `API key '${key}' removed.` }), { status: 200 });
+                await kvManager.removeApiKey(key); // removeApiKey now expects the identifier
+                return new Response(JSON.stringify({ message: `API key entry for '${key}' removed.` }), { status: 200 });
             }
         }
 
@@ -181,6 +175,68 @@ export async function handleAdminApiRequest(request: Request, pathname: string):
             await kvManager.clearAllApiKeys();
             return new Response(JSON.stringify({ message: "All API keys and their stats cleared." }), { status: 200 });
         }
+
+        // --- Fallback API Key Management ---
+        if (pathname === "/api/admin/fallback-api-key") {
+            if (method === "GET") {
+                const key = await kvManager.getFallbackApiKey();
+                return new Response(JSON.stringify({ key: key }), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            if (!await isAdminAuthenticated() && method !== "GET") { // Protect write operations
+                 return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
+            if (method === "POST") { // Sets or clears the single fallback key
+                const { key } = await request.json(); // Expects { key: "theFallbackApiKey" } or { key: null } or { key: "" }
+                if (key === undefined) { // Check if key property exists
+                    return new Response(JSON.stringify({ error: "Invalid 'key' format. Expected a string or null." }), { status: 400 });
+                }
+                if (typeof key !== 'string' && key !== null) {
+                     return new Response(JSON.stringify({ error: "Fallback key must be a string or null." }), { status: 400 });
+                }
+                await kvManager.setFallbackApiKey(key); // Handles empty string or null as clear
+                return new Response(JSON.stringify({ message: "Fallback API key updated." }), { status: 200 });
+            }
+            if (method === "DELETE") { // Clears the fallback API key
+                await kvManager.clearFallbackApiKey();
+                return new Response(JSON.stringify({ message: "Fallback API key cleared." }), { status: 200 });
+            }
+        }
+        // Note: "/api/admin/fallback-api-key/all" is not needed as there's only one key, handled by DELETE or POST with null/empty.
+
+        // --- Fallback Trigger Model Names Management (formerly Secondary Pool Model Names) ---
+        if (pathname === "/api/admin/secondary-pool-models") {
+            if (method === "GET") {
+                const modelNames = await kvManager.getSecondaryPoolModelNames();
+                return new Response(JSON.stringify(Array.from(modelNames)), { status: 200, headers: { "Content-Type": "application/json" } });
+            }
+            if (!await isAdminAuthenticated() && method !== "GET") {
+                return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
+            if (method === "POST") { // Overwrites existing list
+                const { models } = await request.json(); // Expects { models: "model1,model2" } or { models: ["model1", "model2"] }
+                let modelsArray: string[];
+                if (typeof models === 'string') {
+                    modelsArray = models.split(',').map(m => m.trim()).filter(m => m.length > 0);
+                } else if (Array.isArray(models)) {
+                    modelsArray = models.map(m => String(m).trim()).filter(m => m.length > 0);
+                } else {
+                    return new Response(JSON.stringify({ error: "Invalid 'models' format. Provide a comma-separated string or an array of strings." }), { status: 400 });
+                }
+                // No check for empty array, allowing clearing by posting empty
+                await kvManager.setSecondaryPoolModelNames(modelsArray);
+                return new Response(JSON.stringify({ message: "Secondary pool model names set." }), { status: 200 });
+            }
+             // DELETE individual model name (not implemented for simplicity, use POST to overwrite)
+        }
+        
+        if (pathname === "/api/admin/secondary-pool-models/clear" && method === "DELETE") {
+            if (!await isAdminAuthenticated()) {
+                return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+            }
+            await kvManager.clearAllSecondaryPoolModelNames();
+            return new Response(JSON.stringify({ message: "All secondary pool model names cleared." }), { status: 200 });
+        }
+
 
         // --- Failure Threshold Management ---
         if (pathname === "/api/admin/failure-threshold") {

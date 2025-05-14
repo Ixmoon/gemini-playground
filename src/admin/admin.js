@@ -3,7 +3,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const messageArea = document.getElementById('message-area');
 
-    const authSection = document.getElementById('auth-section');
     const passwordSetupForm = document.getElementById('password-setup-form');
     const newAdminPasswordInput = document.getElementById('new-admin-password');
     const setInitialPasswordBtn = document.getElementById('set-initial-password-btn');
@@ -21,17 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const changeAdminPasswordInput = document.getElementById('change-admin-password');
     const changePasswordBtn = document.getElementById('change-password-btn');
 
-    const triggerKeysInput = document.getElementById('trigger-keys-input');
-    const addTriggerKeysBtn = document.getElementById('add-trigger-keys-btn');
-    const triggerKeysList = document.getElementById('trigger-keys-list');
-    const triggerKeysCountSpan = document.getElementById('trigger-keys-count');
-    const clearAllTriggerKeysBtn = document.getElementById('clear-all-trigger-keys-btn');
+    // Single Trigger Key elements
+    const triggerKeyInput = document.getElementById('trigger-key-input');
+    const setTriggerKeyBtn = document.getElementById('set-trigger-key-btn');
+    const clearTriggerKeyBtn = document.getElementById('clear-trigger-key-btn');
 
     const apiKeysInput = document.getElementById('api-keys-input');
     const addApiKeysBtn = document.getElementById('add-api-keys-btn');
     const apiKeysList = document.getElementById('api-keys-list');
     const apiKeysCountSpan = document.getElementById('api-keys-count');
     const clearAllApiKeysBtn = document.getElementById('clear-all-api-keys-btn');
+
+    // Fallback API Key elements
+    const fallbackApiKeyInput = document.getElementById('fallback-api-key-input');
+    const setFallbackApiKeyBtn = document.getElementById('set-fallback-api-key-btn');
+    const clearFallbackApiKeyBtn = document.getElementById('clear-fallback-api-key-btn');
+
+    const secondaryPoolModelsInput = document.getElementById('secondary-pool-models-input');
+    const setSecondaryPoolModelsBtn = document.getElementById('set-secondary-pool-models-btn');
+    const secondaryPoolModelsList = document.getElementById('secondary-pool-models-list');
+    const secondaryPoolModelsCountSpan = document.getElementById('secondary-pool-models-count');
+    const clearAllSecondaryPoolModelsBtn = document.getElementById('clear-all-secondary-pool-models-btn');
 
     const failureThresholdInput = document.getElementById('failure-threshold-input');
     const setFailureThresholdBtn = document.getElementById('set-failure-threshold-btn');
@@ -82,41 +91,64 @@ document.addEventListener('DOMContentLoaded', () => {
             countElement.textContent = count;
         }
 
+        // If type is 'trigger', we don't render a list anymore.
+        // This function is now only for 'api' (pool) and 'model' (list of names)
+        if (type === 'trigger') {
+            // This part of the function will not be called for trigger keys with the new setup.
+            // If it were, we'd clear the list or handle it appropriately.
+            listElement.innerHTML = ''; // Clear if it was a list before
+            if (countElement) countElement.textContent = 'N/A'; // Or hide it
+            return;
+        }
+
         if (count === 0) {
             listElement.innerHTML = '<li>无</li>';
             return;
         }
-        keys.forEach(key => {
+        keys.forEach(item => { 
             const li = document.createElement('li');
-            const keySpan = document.createElement('span');
-            // For API keys, show only a portion for security if desired, but admin needs to see full.
-            keySpan.textContent = key; 
-            li.appendChild(keySpan);
+            const itemSpan = document.createElement('span');
+            itemSpan.textContent = item; 
+            li.appendChild(itemSpan);
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.textContent = '删除';
-            deleteBtn.classList.add('danger');
-            deleteBtn.onclick = async () => {
-                if (confirm(`确定要删除密钥 "${key}"吗?`)) {
-                    const endpoint = type === 'trigger' ? '/trigger-keys' : '/api-keys';
-                    const result = await apiRequest(endpoint, 'DELETE', { key });
-                    if (result) {
-                        showMessage(result.message || `密钥 "${key}" 已删除。`, 'success');
-                        loadManagementData();
+            if (type === 'api') { // Only for primary API key pool items
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '删除';
+                deleteBtn.classList.add('danger');
+                deleteBtn.onclick = async () => {
+                    if (confirm(`确定要删除目标 API 密钥 "${item}"吗?`)) {
+                        const result = await apiRequest('/api-keys', 'DELETE', { key: item });
+                        if (result) {
+                            showMessage(result.message || `"${item}" 已删除。`, 'success');
+                            loadManagementData();
+                        }
                     }
-                }
-            };
-            li.appendChild(deleteBtn);
+                };
+                li.appendChild(deleteBtn);
+            }
+            // For 'model' type, no individual delete button is added here.
             listElement.appendChild(li);
         });
     }
 
     async function loadManagementData() {
-        const triggerKeysData = await apiRequest('/trigger-keys', 'GET', null, false);
-        if (triggerKeysData) renderKeyList(triggerKeysList, triggerKeysData, 'trigger', triggerKeysCountSpan);
+        // Load Single Trigger Key
+        const triggerKeyData = await apiRequest('/trigger-key', 'GET', null, false);
+        if (triggerKeyData && typeof triggerKeyData.key !== 'undefined') {
+            triggerKeyInput.value = triggerKeyData.key || '';
+        }
 
         const apiKeysData = await apiRequest('/api-keys', 'GET', null, false);
         if (apiKeysData) renderKeyList(apiKeysList, apiKeysData, 'api', apiKeysCountSpan);
+
+        // Load Fallback API Key
+        const fallbackApiKeyData = await apiRequest('/fallback-api-key', 'GET', null, false);
+        if (fallbackApiKeyData && typeof fallbackApiKeyData.key !== 'undefined') {
+            fallbackApiKeyInput.value = fallbackApiKeyData.key || ''; // Set to empty string if null
+        }
+        
+        const secondaryPoolModelsData = await apiRequest('/secondary-pool-models', 'GET', null, false);
+        if (secondaryPoolModelsData) renderKeyList(secondaryPoolModelsList, secondaryPoolModelsData, 'model', secondaryPoolModelsCountSpan);
 
         const thresholdData = await apiRequest('/failure-threshold', 'GET', null, false);
         if (thresholdData && typeof thresholdData.threshold !== 'undefined') {
@@ -254,17 +286,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    addTriggerKeysBtn.addEventListener('click', async () => {
-        const keys = triggerKeysInput.value;
-        if (!keys.trim()) {
-            showMessage('请输入要添加的触发密钥。', 'error');
-            return;
-        }
-        const result = await apiRequest('/trigger-keys', 'POST', { keys });
+    // Event Listener for Single Trigger Key
+    setTriggerKeyBtn.addEventListener('click', async () => {
+        const key = triggerKeyInput.value.trim();
+        // API handles empty string as clearing the key.
+        const result = await apiRequest('/trigger-key', 'POST', { key: key });
         if (result) {
-            showMessage(result.message || '触发密钥已添加/更新。', 'success');
-            triggerKeysInput.value = '';
-            loadManagementData();
+            showMessage(result.message || '触发密钥已更新。', 'success');
+            loadManagementData(); // Reload to confirm
+        }
+    });
+
+    clearTriggerKeyBtn.addEventListener('click', async () => {
+        if (confirm('确定要清除触发密钥吗？')) {
+            const result = await apiRequest('/trigger-key', 'DELETE');
+            if (result) {
+                showMessage(result.message || '触发密钥已清除。', 'success');
+                triggerKeyInput.value = ''; // Clear input field
+                loadManagementData(); // Reload
+            }
         }
     });
 
@@ -295,15 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    clearAllTriggerKeysBtn.addEventListener('click', async () => {
-        if (confirm('确定要清空所有触发密钥吗？此操作无法撤销。')) {
-            const result = await apiRequest('/trigger-keys/all', 'DELETE');
-            if (result) {
-                showMessage(result.message || '所有触发密钥已清空。', 'success');
-                loadManagementData();
-            }
-        }
-    });
+    // clearAllTriggerKeysBtn is now clearTriggerKeyBtn, handled above.
 
     clearAllApiKeysBtn.addEventListener('click', async () => {
         if (confirm('确定要清空所有目标 API 密钥吗？此操作无法撤销，并将重置相关统计数据。')) {
@@ -317,4 +349,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial check
     checkInitialStatus();
+
+    // --- Event Listener for Fallback API Key ---
+    setFallbackApiKeyBtn.addEventListener('click', async () => {
+        const key = fallbackApiKeyInput.value.trim(); // Send empty string to clear, or the key itself
+        // The API endpoint /fallback-api-key with POST will handle empty string as clearing the key.
+        const result = await apiRequest('/fallback-api-key', 'POST', { key: key });
+        if (result) {
+            showMessage(result.message || '备用 API 密钥已更新。', 'success');
+            loadManagementData(); // Reload to confirm the input field reflects the change
+        }
+    });
+
+    clearFallbackApiKeyBtn.addEventListener('click', async () => {
+        if (confirm('确定要清除备用 API 密钥吗？')) {
+            // Sending empty string or null via POST is one way, or use dedicated DELETE
+            const result = await apiRequest('/fallback-api-key', 'DELETE'); 
+            if (result) {
+                showMessage(result.message || '备用 API 密钥已清除。', 'success');
+                fallbackApiKeyInput.value = ''; // Clear the input field
+                loadManagementData(); // Reload data
+            }
+        }
+    });
+
+    // --- Event Listeners for Secondary Pool Model Names ---
+    setSecondaryPoolModelsBtn.addEventListener('click', async () => {
+        const models = secondaryPoolModelsInput.value;
+        // No trim check here, as sending an empty string is how we clear the list via POST
+        const result = await apiRequest('/secondary-pool-models', 'POST', { models });
+        if (result) {
+            showMessage(result.message || '备用池触发模型列表已更新。', 'success');
+            secondaryPoolModelsInput.value = ''; // Clear input after successful set
+            loadManagementData();
+        }
+    });
+
+    clearAllSecondaryPoolModelsBtn.addEventListener('click', async () => {
+        if (confirm('确定要清空所有备用池触发模型吗？此操作无法撤销。')) {
+            // We can use the POST endpoint with an empty string/array, 
+            // or use the dedicated /clear endpoint if available.
+            // The current admin_api.ts has /secondary-pool-models/clear
+            const result = await apiRequest('/secondary-pool-models/clear', 'DELETE');
+            if (result) {
+                showMessage(result.message || '所有备用池触发模型已清空。', 'success');
+                loadManagementData();
+            }
+        }
+    });
 });

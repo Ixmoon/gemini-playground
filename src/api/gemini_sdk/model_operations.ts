@@ -5,13 +5,14 @@ import {
     RestListModelsResponse,
     Model,
     GEMINI_REST_API_ENDPOINT,
+    GEMINI_API_CLIENT_HEADER // Assuming this will be added to types.ts
 } from "./types.ts";
 
 export async function countSdxTokens(
     apiKey: string,
     params: CountSdxTokensParams
 ): Promise<CountTokensResponse> {
-    const ai = new SdkGoogleGenAI({ apiKey });
+    const ai = new SdkGoogleGenAI({ apiKey }); // SDK likely handles its own client header
     return ai.models.countTokens(params);
 }
 
@@ -20,7 +21,8 @@ export async function listSdxModels(apiKey: string): Promise<RestListModelsRespo
         method: 'GET',
         headers: {
             'x-goog-api-key': apiKey,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'x-goog-api-client': GEMINI_API_CLIENT_HEADER
         }
     });
     if (!response.ok) {
@@ -39,7 +41,8 @@ export async function getSdxModel(apiKey: string, modelName: string): Promise<Mo
         method: 'GET',
         headers: {
             'x-goog-api-key': apiKey,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'x-goog-api-client': GEMINI_API_CLIENT_HEADER
         }
     });
     if (!response.ok) {

@@ -23,6 +23,9 @@ export interface OpenAIChatCompletionRequest {
     response_format?: { type: string };
     tools?: any[];
     tool_choice?: any;
+    reasoning?: { // Added reasoning
+        effort?: "low" | "medium" | "high";
+    };
 }
 
 export interface OpenAIEmbeddingRequest {
@@ -33,8 +36,11 @@ export interface OpenAIEmbeddingRequest {
 
 export interface OpenAIUsage {
     prompt_tokens: number;
-    completion_tokens: number;
+    completion_tokens: number; // Actual visible output tokens
     total_tokens: number;
+    output_tokens_details?: { // Added for reasoning tokens
+        reasoning_tokens?: number;
+    };
 }
 
 export interface GeminiCandidate {

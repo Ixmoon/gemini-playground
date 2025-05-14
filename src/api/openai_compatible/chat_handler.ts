@@ -7,8 +7,11 @@ import {
 import {
     OpenAIChatCompletionRequest,
     GeminiCandidate,
-    OpenAIUsage
 } from "./types.ts";
+import {
+    iterableToReadableStream,
+    GeminiToOpenAIStreamTransformer
+} from "./stream_transformer.ts"; // Added import
 import {
     transformOpenAIMessagesToGeminiContents,
     transformOpenAIConfigToSdkConfigOptions,
@@ -21,78 +24,98 @@ export async function handleOpenAIChatCompletion(
     apiKey: string, openAIRequest: OpenAIChatCompletionRequest
 ): Promise<Response> {
     const { contents: geminiContents, systemInstruction } = await transformOpenAIMessagesToGeminiContents(openAIRequest.messages);
-    const sdkConfigOptions = transformOpenAIConfigToSdkConfigOptions(openAIRequest);
+    const sdkConfigOptions = transformOpenAIConfigToSdkConfigOptions(openAIRequest); // This now primarily handles generation config
     if (systemInstruction) sdkConfigOptions.systemInstruction = systemInstruction;
 
-    if (openAIRequest.tools) {
-        sdkConfigOptions.tools = openAIRequest.tools.map(tool => {
-            if (tool.type === "function" && tool.function) {
-                if (tool.function.name === "googleSearch") {
-                    // Handle Google Search as a special built-in tool
-                    return { googleSearch: {} };
-                } else {
-                    // Handle other functions as standard function declarations
-                    // TODO: Implement proper JSON schema to Gemini schema conversion for parameters
-                    const functionDeclaration = {
-                        name: tool.function.name,
-                        description: tool.function.description || "", // Default to empty string if not provided
-                        parameters: tool.function.parameters // Pass as is for now, needs full conversion
-                    };
-                    return { functionDeclarations: [functionDeclaration] };
-                }
+    // Handle tools and tool_choice separately to build SdkTool and SdkToolConfig
+    if (openAIRequest.tools && openAIRequest.tools.length > 0) {
+        const functionDeclarations = openAIRequest.tools
+            .filter(tool => tool.type === "function" && tool.function)
+            .map(tool => {
+                // TODO: Implement proper JSON schema to Gemini schema conversion for parameters
+                // For now, passing parameters as is, assuming they are compatible or will be handled by Gemini.
+                // A more robust solution would involve a schema transformation utility.
+                return {
+                    name: tool.function.name,
+                    description: tool.function.description || "",
+                    parameters: tool.function.parameters,
+                };
+            });
+
+        if (functionDeclarations.length > 0) {
+            // Check for Google Search as a special tool
+            const googleSearchTool = openAIRequest.tools.find(tool => tool.type === "function" && tool.function?.name === "googleSearch");
+            if (googleSearchTool) {
+                 sdkConfigOptions.tools = [{ googleSearch: {} }];
+                 // If other function declarations exist alongside googleSearch, decide how to handle.
+                 // Current Gemini SDK might prefer one type of tool in the array.
+                 // For simplicity, if googleSearch is present, we prioritize it.
+                 // Or, we can attempt to send both if the SDK supports [{googleSearch: {}}, {functionDeclarations: [...]}]
+                 // Based on Gemini SDK, tools is an array that can contain a GoogleSearch OR FunctionDeclaration objects.
+                 // It's not typically an array of objects with different tool types mixed at the top level of the array.
+                 // So, if googleSearch is present, we might only send that, or send functionDeclarations if no googleSearch.
+                 // Let's assume for now: if googleSearch is explicitly named, it's the primary tool.
+                 // If other functions are also declared, they might be ignored by this simplified logic.
+                 // A more advanced setup would require understanding how Gemini prioritizes/handles mixed tool types.
+            } else {
+                 sdkConfigOptions.tools = [{ functionDeclarations: functionDeclarations }];
             }
-            // This case should ideally not be reached if OpenAI request is valid,
-            // as 'tools' should be an array of 'function' type tools.
-            // However, returning the tool as is might be a safe fallback, or throw an error.
-            return tool;
-        });
+        }
     }
+
     if (openAIRequest.tool_choice) {
         if (typeof openAIRequest.tool_choice === 'string') {
             const choiceStr = openAIRequest.tool_choice.toUpperCase();
-            if (choiceStr === "AUTO" && "AUTO" in FunctionCallingConfigMode) {
-                 sdkConfigOptions.toolConfig = { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO }};
-            } else if (choiceStr === "ANY" && "ANY" in FunctionCallingConfigMode) {
-                 sdkConfigOptions.toolConfig = { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY }};
-            } else if (choiceStr === "NONE" && "NONE" in FunctionCallingConfigMode) {
-                 sdkConfigOptions.toolConfig = { functionCallingConfig: { mode: FunctionCallingConfigMode.NONE }};
+            let mode: FunctionCallingConfigMode | undefined = undefined;
+            if (choiceStr === "AUTO") mode = FunctionCallingConfigMode.AUTO;
+            else if (choiceStr === "ANY") mode = FunctionCallingConfigMode.ANY; // Or "REQUIRED" in OpenAI v1.1.0+ for a specific tool
+            else if (choiceStr === "NONE") mode = FunctionCallingConfigMode.NONE;
+            
+            if (mode) {
+                sdkConfigOptions.toolConfig = { functionCallingConfig: { mode } };
             }
-        } else if (typeof openAIRequest.tool_choice === 'object' && openAIRequest.tool_choice.type === 'function' && openAIRequest.tool_choice.function) {
-             sdkConfigOptions.toolConfig = {
-                functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: [openAIRequest.tool_choice.function.name] }
+        } else if (typeof openAIRequest.tool_choice === 'object' && openAIRequest.tool_choice.type === 'function' && openAIRequest.tool_choice.function?.name) {
+            // This implies a specific function should be called.
+            sdkConfigOptions.toolConfig = {
+                functionCallingConfig: {
+                    mode: FunctionCallingConfigMode.ANY, // ANY mode allows the model to choose from the provided list.
+                                                       // If a specific function is forced, Gemini uses allowedFunctionNames.
+                    allowedFunctionNames: [openAIRequest.tool_choice.function.name]
+                }
             };
         }
     }
 
+
     const geminiParams: GenerateSdxContentParams = {
-        model: openAIRequest.model, contents: geminiContents, config: sdkConfigOptions,
+        model: openAIRequest.model,
+        contents: geminiContents,
+        config: sdkConfigOptions,
     };
     const id = generateOpenAIId();
 
     if (openAIRequest.stream) {
         try {
-            const geminiStream = await generateSdxContentStream(apiKey, geminiParams);
-            const readableStream = new ReadableStream({
-                async start(controller) {
-                    const encoder = new TextEncoder();
-                    for await (const chunk of geminiStream) {
-                        if (chunk.candidates && chunk.candidates.length > 0) {
-                            const choice = transformGeminiCandidateToOpenAIChoice(chunk.candidates[0], 0, true);
-                            const openAIStreamChunk: {id: string; object: string; created: number; model: string; choices: any[]; usage: OpenAIUsage | null} = {
-                                id: id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000),
-                                model: openAIRequest.model, choices: [choice], usage: null,
-                            };
-                            if (choice.finish_reason && chunk.usageMetadata) {
-                                openAIStreamChunk.usage = transformGeminiUsageToOpenAI(chunk.usageMetadata);
-                            }
-                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAIStreamChunk)}\n\n`));
-                        } else if (chunk.promptFeedback) console.warn("Gemini stream prompt feedback:", chunk.promptFeedback);
-                    }
-                    controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                    controller.close();
+            const geminiStreamIterable = await generateSdxContentStream(apiKey, geminiParams);
+            const geminiReadableStream = iterableToReadableStream(geminiStreamIterable);
+            
+            const transformer = new GeminiToOpenAIStreamTransformer(
+                id,
+                openAIRequest.model,
+                openAIRequest.stream_options
+            );
+
+            const openAIStream = geminiReadableStream
+                .pipeThrough(new TransformStream(transformer))
+                .pipeThrough(new TextEncoderStream());
+
+            return new Response(openAIStream, { 
+                headers: { 
+                    'Content-Type': 'text/event-stream; charset=utf-8', 
+                    'Cache-Control': 'no-cache', 
+                    'Connection': 'keep-alive' 
                 }
             });
-            return new Response(readableStream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }});
         } catch (error) {
             console.error("Error during Gemini stream generation:", error);
             return new Response(JSON.stringify({ error: { message: (error as Error).message || "Stream failed", type: "gemini_error" }}), { status: 500, headers: { 'Content-Type': 'application/json' }});
@@ -102,8 +125,16 @@ export async function handleOpenAIChatCompletion(
             const geminiResult = await generateSdxContent(apiKey, geminiParams);
             const choices = geminiResult.candidates?.map((cand: GeminiCandidate, idx: number) => transformGeminiCandidateToOpenAIChoice(cand, idx, false)) || [];
             const openAIResponse = {
-                id: id, object: "chat.completion", created: Math.floor(Date.now() / 1000),
-                model: openAIRequest.model, choices: choices, usage: transformGeminiUsageToOpenAI(geminiResult.usageMetadata),
+                id: id,
+                object: "chat.completion",
+                created: Math.floor(Date.now() / 1000),
+                model: openAIRequest.model,
+                choices: choices,
+                usage: transformGeminiUsageToOpenAI(geminiResult.usageMetadata),
+                reasoning: { // Added reasoning to the response
+                    effort: openAIRequest.reasoning?.effort || null,
+                    summary: null // Gemini SDK does not currently provide a reasoning summary
+                }
             };
             return new Response(JSON.stringify(openAIResponse), { headers: { 'Content-Type': 'application/json; charset=utf-8' }});
         } catch (error) {

@@ -20,8 +20,10 @@ import {
     GenerateImageGeminiSdxParams,
     GenerateImageImagenParams,
     Modality, // Import Modality for validation if needed
+    GenerateContentResponse, // Added for explicit typing in TransformStream
 } from "../gemini_sdk/index.ts"; // Adjusted path
 import { NativeRoute, RouteHandlerParams } from "./types.ts";
+import { iterableToReadableStream } from "../openai_compatible/stream_transformer.ts"; // Added for stream optimization
 
 // Route table
 export const nativeRoutes: NativeRoute[] = [
@@ -70,21 +72,28 @@ export const nativeRoutes: NativeRoute[] = [
             if (!params.requestBody?.contents) return new Response("Missing 'contents' in request body for streamGenerateContent.", { status: 400 });
             const genParams: GenerateSdxContentParams = { model: params.modelName, contents: params.requestBody.contents, config: params.sdkConfigOptions };
             const stream = await generateSdxContentStream(apiKey, genParams);
-            const readableStream = new ReadableStream({
-                async start(controller) {
+            const geminiReadableStream = iterableToReadableStream(stream);
+
+            const sseTransformer = new TransformStream<GenerateContentResponse, Uint8Array>({
+                transform(chunk, controller) {
                     const encoder = new TextEncoder();
                     try {
-                        for await (const chunk of stream) {
-                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-                        }
-                        controller.close();
+                        // Ensure the chunk is what we expect (GenerateContentResponse)
+                        // and then stringify it for the SSE data field.
+                        const sseFormattedChunk = `data: ${JSON.stringify(chunk)}\n\n`;
+                        controller.enqueue(encoder.encode(sseFormattedChunk));
                     } catch (e) {
-                        console.error("Error reading native Gemini stream:", e);
-                        controller.error(e);
+                        console.error("Error encoding native Gemini stream chunk:", e);
+                        // Optionally, enqueue an error message or handle differently
+                        // For now, re-throwing will propagate to the stream's error handling
+                        controller.error(e); 
                     }
                 }
             });
-            return new Response(readableStream, { status: 200, headers: { 'Content-Type': 'text/event-stream;charset=UTF-8', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
+
+            const finalStream = geminiReadableStream.pipeThrough(sseTransformer);
+            
+            return new Response(finalStream, { status: 200, headers: { 'Content-Type': 'text/event-stream;charset=UTF-8', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
         }
     },
     {

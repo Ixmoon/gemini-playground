@@ -51,9 +51,6 @@ export interface SdkConfigOptions {
     toolConfig?: SdkToolConfig;
     responseMimeType?: string;
     responseSchema?: SdkSchema;
-    thinkingConfig?: {
-        thinkingBudget?: number;
-    };
     cachedContent?: string;
     candidateCount?: number;
     stopSequences?: string[];
@@ -62,6 +59,9 @@ export interface SdkConfigOptions {
     topP?: number;
     topK?: number;
     responseModalities?: SdkModality[]; // For Gemini image generation
+    thinkingConfig?: { // Added thinkingConfig
+        thinkingBudget?: number;
+    };
 }
 
 export interface GenerateSdxContentParams {
@@ -122,6 +122,7 @@ export interface RestListModelsResponse {
 }
 
 export const GEMINI_REST_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
+export const GEMINI_API_CLIENT_HEADER = "gcp-typescript-gemini-proxy/0.1.0"; // Added API client header
 
 // ---- Imagen 3 Image Generation Types ----
 export interface Imagen3Config {
