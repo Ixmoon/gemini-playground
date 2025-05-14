@@ -121,30 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (count === 0) {
-            let placeholderItems = null;
-            let itemTypeLabel = "";
-
-            if (type === 'api') {
-                placeholderItems = ["示例 API 密钥 1 (占位符)", "示例 API 密钥 2 (占位符)", "示例 API 密钥 3 (占位符)"];
-                itemTypeLabel = "API密钥";
-            } else if (type === 'model') {
-                placeholderItems = ["示例模型 1 (占位符)", "示例模型 2 (占位符)", "示例模型 3 (占位符)"];
-                itemTypeLabel = "模型";
-            }
-
-            if (placeholderItems) {
-                placeholderItems.forEach(itemText => {
-                    const li = document.createElement('li');
-                    const itemSpan = document.createElement('span');
-                    itemSpan.textContent = itemText;
-                    li.appendChild(itemSpan);
-                    // No delete button for placeholder items
-                    listElement.appendChild(li);
-                });
-                if (countElement) countElement.textContent = `${placeholderItems.length} (占位符)`;
-            } else {
-                listElement.innerHTML = '<li>无</li>';
-            }
+            listElement.innerHTML = '<li>无</li>';
             return;
         }
 
