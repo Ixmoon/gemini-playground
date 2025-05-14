@@ -102,7 +102,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const count = keys.length;
+        // Filter keys to ensure all items are non-null strings before rendering
+        const validKeys = keys.filter(key => typeof key === 'string' && key !== null);
+
+        const count = validKeys.length; // Use length of filtered keys
         if (countElement) {
             countElement.textContent = count;
         }
@@ -112,9 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'trigger') {
             if (countElement) countElement.textContent = 'N/A'; // Or specific display for single trigger key
             // Typically, trigger key is shown in an input field, not a list.
-            // If it were to be shown in a list and `keys` is an array (e.g. `[theKey]` or `[]`):
             if (count === 0) listElement.innerHTML = '<li>未设置</li>';
-            else listElement.innerHTML = `<li>${keys[0]}</li>`; // Assuming single trigger key if in list
+            else listElement.innerHTML = `<li>${validKeys[0]}</li>`; // Use validKeys
             return;
         }
 
@@ -123,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        keys.forEach(item => {
+        validKeys.forEach(item => { // Iterate over filtered validKeys
             const li = document.createElement('li');
             const itemSpan = document.createElement('span');
             itemSpan.textContent = item; 
@@ -158,13 +160,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // API Pool Keys
         const apiKeysData = await apiRequest('/api-keys');
-        if (apiKeysData) { // Handles null from apiRequest (server error)
-            renderKeyList(apiKeysList, Object.values(apiKeysData), 'api', apiKeysCountSpan);
-        } else if (apiKeysList) { 
-            // Explicitly render empty/error if apiRequest returned null (server error)
-            // This assumes apiKeysList itself is valid. renderKeyList will show "无" or its own error.
-            renderKeyList(apiKeysList, [], 'api', apiKeysCountSpan); 
+        let processedApiKeys = [];
+        if (apiKeysData && typeof apiKeysData === 'object' && !Array.isArray(apiKeysData)) {
+            processedApiKeys = Object.values(apiKeysData);
+        } else if (apiKeysData !== null) { // Data received, but not the expected object format
+            showMessage('收到的目标 API 密钥数据格式不正确。预期是一个对象。', 'error');
         }
+        // Ensure apiKeysList exists before rendering. Render with processedApiKeys (even if empty).
+        if (apiKeysList) renderKeyList(apiKeysList, processedApiKeys, 'api', apiKeysCountSpan);
 
         // Load Fallback API Key
         const fallbackApiKeyData = await apiRequest('/fallback-api-key');
@@ -174,12 +177,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Secondary Pool Models
         const secondaryPoolModelsData = await apiRequest('/secondary-pool-models');
-        if (secondaryPoolModelsData) { // Handles null from apiRequest
-            renderKeyList(secondaryPoolModelsList, secondaryPoolModelsData, 'model', secondaryPoolModelsCountSpan);
-        } else if (secondaryPoolModelsList) {
-            // Explicitly render empty/error if apiRequest returned null
-            renderKeyList(secondaryPoolModelsList, [], 'model', secondaryPoolModelsCountSpan);
+        let processedSecondaryPoolModels = [];
+        if (Array.isArray(secondaryPoolModelsData)) {
+            processedSecondaryPoolModels = secondaryPoolModelsData;
+        } else if (secondaryPoolModelsData !== null) { // Data received, but not the expected array format
+            showMessage('收到的备用池模型数据格式不正确。预期是一个数组。', 'error');
         }
+        // Ensure secondaryPoolModelsList exists. Render with processed data.
+        if (secondaryPoolModelsList) renderKeyList(secondaryPoolModelsList, processedSecondaryPoolModels, 'model', secondaryPoolModelsCountSpan);
 
         // Failure Threshold
         const thresholdData = await apiRequest('/failure-threshold');
