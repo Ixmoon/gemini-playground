@@ -81,9 +81,9 @@ export async function getApiKeys(): Promise<Record<string, string>> {
 // Input `keysToAdd` is a Record<string, string> where key is an identifier/name and value is the API key string.
 export async function addApiKeys(keysToAdd: Record<string, string>): Promise<void> {
     const kv = ensureKv();
-    const currentApiKeysResult = await kv.get<Record<string, string>>(API_KEYS_KEY);
-    const currentApiKeysRecord = currentApiKeysResult.value || {};
+    const currentApiKeysRecord = await getApiKeys(); // Uses cache, returns Record
     
+    // Merge new keys. If a key identifier already exists, it will be overwritten.
     for (const keyIdentifier in keysToAdd) {
         if (Object.prototype.hasOwnProperty.call(keysToAdd, keyIdentifier)) {
             const apiKeyString = keysToAdd[keyIdentifier];
@@ -99,8 +99,7 @@ export async function addApiKeys(keysToAdd: Record<string, string>): Promise<voi
 // `keyIdentifierToRemove` is the name/identifier of the API key entry.
 export async function removeApiKey(keyIdentifierToRemove: string): Promise<void> {
     const kv = ensureKv();
-    const currentApiKeysResult = await kv.get<Record<string, string>>(API_KEYS_KEY);
-    const currentApiKeysRecord = currentApiKeysResult.value || {};
+    const currentApiKeysRecord = await getApiKeys();
     
     if (Object.prototype.hasOwnProperty.call(currentApiKeysRecord, keyIdentifierToRemove)) {
         delete currentApiKeysRecord[keyIdentifierToRemove];
@@ -120,7 +119,7 @@ export async function clearAllApiKeys(): Promise<void> {
 export async function getFailureThreshold(): Promise<number> {
     const kv = ensureKv();
     const result = await kv.get<number>(FAILURE_THRESHOLD_KEY);
-    return result.value ?? 5; // Default to 5 if not set
+    return result.value ?? 5;
 }
 
 export async function setFailureThreshold(threshold: number): Promise<void> {
@@ -223,25 +222,21 @@ export async function setSecondaryPoolModelNames(modelNames: string[]): Promise<
 
 export async function addSecondaryPoolModelNames(modelNames: string[]): Promise<void> {
     const kv = ensureKv();
-    const currentModelNamesResult = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);
-    const currentModelNamesSet = new Set(currentModelNamesResult.value || []);
-    
+    const currentModelNames = await getSecondaryPoolModelNames();
     modelNames.forEach(name => {
         const trimmedName = name.trim();
-        if (trimmedName.length > 0) {
-            currentModelNamesSet.add(trimmedName);
+        if (trimmedName.length > 0) { 
+            currentModelNames.add(trimmedName);
         }
     });
-    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNamesSet));
+    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNames));
 }
 
 export async function removeSecondaryPoolModelName(modelName: string): Promise<void> {
     const kv = ensureKv();
-    const currentModelNamesResult = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);
-    const currentModelNamesSet = new Set(currentModelNamesResult.value || []);
-
-    currentModelNamesSet.delete(modelName.trim());
-    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNamesSet));
+    const currentModelNames = await getSecondaryPoolModelNames();
+    currentModelNames.delete(modelName.trim());
+    await kv.set(SECONDARY_POOL_MODEL_NAMES_KEY, Array.from(currentModelNames));
 }
 
 export async function clearAllSecondaryPoolModelNames(): Promise<void> {
