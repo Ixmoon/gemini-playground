@@ -30,16 +30,18 @@ function setCache<T>(keyArray: string[], value: T, ttlMs: number = DEFAULT_TTL_M
     cache.set(cacheKeyString, { value, expiresAt: Date.now() + ttlMs });
 }
 
-function getCache<T>(keyArray: string[]): T | null {
+// Returns the cached value (which can be T or null if T is nullable)
+// Returns undefined if cache miss or expired
+function getCache<T>(keyArray: string[]): T | undefined { // Return type changed
     const cacheKeyString = getCacheKey(keyArray);
     const entry = cache.get(cacheKeyString);
     if (entry && entry.expiresAt > Date.now()) {
-        return entry.value as T;
+        return entry.value as T; // Value itself can be null if T is e.g. string | null
     }
     if (entry) {
         cache.delete(cacheKeyString);
     }
-    return null;
+    return undefined; // Cache miss or expired
 }
 
 function clearCache(keyArray: string[]): void {
@@ -78,9 +80,12 @@ export async function setAdminPasswordHash(hash: string): Promise<void> {
 
 // --- Single Trigger Key Management ---
 export async function getTriggerKey(): Promise<string | null> {
-    const cached = getCache<string | null>(SINGLE_TRIGGER_KEY_KEY);
-    if (cached !== undefined) return cached;
+    const cached = getCache<string | null>(SINGLE_TRIGGER_KEY_KEY); // cached can be string, null, or undefined
+    if (cached !== undefined) { // If it's not undefined, it's a valid cache hit (value could be string or null)
+        return cached;
+    }
 
+    // Cache miss (cached === undefined), proceed to fetch from KV
     const kv = ensureKv();
     const result = await kv.get<string>(SINGLE_TRIGGER_KEY_KEY);
     const value = result.value || null;
@@ -115,7 +120,7 @@ export async function isValidTriggerKey(providedKey: string): Promise<boolean> {
 // Now stores and returns a Record<string, string> (JSON object)
 export async function getApiKeys(): Promise<Record<string, string>> {
     const cached = getCache<Record<string, string>>(API_KEYS_KEY);
-    if (cached) return cached;
+    if (cached !== undefined) return cached;
 
     const kv = ensureKv();
     const result = await kv.get<Record<string, string>>(API_KEYS_KEY);
@@ -167,7 +172,7 @@ export async function clearAllApiKeys(): Promise<void> {
 // No changes needed here based on "删除所有failureCount" as individual counts are not stored.
 export async function getFailureThreshold(): Promise<number> {
     const cached = getCache<number>(FAILURE_THRESHOLD_KEY);
-    if (cached !== null) return cached;
+    if (cached !== undefined) return cached;
 
     const kv = ensureKv();
     const result = await kv.get<number>(FAILURE_THRESHOLD_KEY);
@@ -242,9 +247,12 @@ export async function getNextAvailableApiKey(): Promise<string | null> {
 
 // --- Fallback API Key Management ---
 export async function getFallbackApiKey(): Promise<string | null> {
-    const cached = getCache<string | null>(FALLBACK_API_KEY_KEY);
-    if (cached !== undefined) return cached;
+    const cached = getCache<string | null>(FALLBACK_API_KEY_KEY); // cached can be string, null, or undefined
+    if (cached !== undefined) { // If it's not undefined, it's a valid cache hit (value could be string or null)
+        return cached;
+    }
 
+    // Cache miss (cached === undefined), proceed to fetch from KV
     const kv = ensureKv();
     const result = await kv.get<string>(FALLBACK_API_KEY_KEY);
     const value = result.value || null;
@@ -272,7 +280,7 @@ export async function clearFallbackApiKey(): Promise<void> {
 // --- Fallback Trigger Model Names Management ---
 export async function getSecondaryPoolModelNames(): Promise<Set<string>> {
     const cached = getCache<Set<string>>(SECONDARY_POOL_MODEL_NAMES_KEY);
-    if (cached) return cached;
+    if (cached !== undefined) return cached;
 
     const kv = ensureKv();
     const result = await kv.get<string[]>(SECONDARY_POOL_MODEL_NAMES_KEY);

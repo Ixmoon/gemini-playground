@@ -29,8 +29,7 @@ export function classifyRequestPath(pathname: string): 'native' | 'openai' | 'op
         pathname.includes(':countTokens') ||
         pathname.includes(':generateImageWithGemini') || // Added native image route
         pathname.includes(':generateImageWithImagen') || // Added native image route
-        pathname.startsWith('/models') || 
-        pathname.startsWith('/tunedModels')) {
+        pathname.startsWith('/v1beta/models')) { 
         return 'native';
     }
     // OpenAI compatible image generation path

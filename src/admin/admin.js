@@ -139,7 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const apiKeysData = await apiRequest('/api-keys', 'GET', null, false);
-        if (apiKeysData) renderKeyList(apiKeysList, apiKeysData, 'api', apiKeysCountSpan);
+        // apiKeysData is a Record<string, string>, renderKeyList expects an array for 'api' type.
+        // We should pass the values (the API keys themselves) or keys (the identifiers).
+        // Since identifiers are the same as keys in the current setup, Object.values() is appropriate.
+        if (apiKeysData) renderKeyList(apiKeysList, Object.values(apiKeysData), 'api', apiKeysCountSpan);
 
         // Load Fallback API Key
         const fallbackApiKeyData = await apiRequest('/fallback-api-key', 'GET', null, false);

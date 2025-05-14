@@ -100,25 +100,26 @@ export async function handleForwardedRequest(request: Request): Promise<Response
     const isTriggerAuth = await kvManager.isValidTriggerKey(userProvidedKey);
 
     if (isTriggerAuth) {
-        // Extract model name from request body (preParsedJson)
-        // This needs to be robust and handle different request structures if necessary.
-        // Assuming 'model' field for OpenAI and 'model' or similar for Native Gemini.
-        // For native Gemini, the model is often part of the path, but can also be in body for some calls.
+        // Extract model name from request body (preParsedJson) or path (for native Gemini)
         // For OpenAI, it's typically `preParsedJson.model`.
+        // For native Gemini, it's extracted from paths like /[version]/models/model-name[:action] or /[version]/tunedModels/model-name[:action].
         let modelNameFromRequest: string | null = null;
         if (preParsedJson && typeof preParsedJson.model === 'string') {
             modelNameFromRequest = preParsedJson.model;
-        } else if (pathType === 'native' && targetPath.startsWith("models/")) { 
-            // e.g. /v1beta/models/gemini-pro:generateContent -> gemini-pro
-            // e.g. /v1beta/models/gemini-1.5-flash-latest -> gemini-1.5-flash-latest
-            const pathParts = targetPath.split('/');
-            if (pathParts.length > 1 && pathParts[0] === "models") {
-                 // Find the model part, which could be before an action like :generateContent
-                const modelPart = pathParts[1].split(':')[0];
-                if (modelPart) {
+        } else if (pathType === 'native') {
+            const v1betaModelsPrefix = "/v1beta/models/";
+            if (targetPath.startsWith(v1betaModelsPrefix)) {
+                // Extract the part after "/v1beta/models/"
+                const modelIdentifier = targetPath.substring(v1betaModelsPrefix.length);
+                // The model name is the part before the first colon (if any)
+                const modelPart = modelIdentifier.split(':')[0];
+                if (modelPart) { // Ensure modelPart is not an empty string
                     modelNameFromRequest = modelPart;
                 }
             }
+            // If pathType is 'native' but path doesn't start with /v1beta/models/,
+            // modelNameFromRequest remains null (unless set from JSON body),
+            // and no model name is extracted from the path.
         }
         // Add more specific model extraction logic if needed for other pathTypes or request structures
 
