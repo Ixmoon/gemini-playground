@@ -222,7 +222,7 @@ export function transformGeminiCandidateToOpenAIChoice(
 
 export function transformGeminiUsageToOpenAI(usageMetadata: any): OpenAIUsage { // usageMetadata is of type Gemini's UsageMetadata
     if (!usageMetadata) {
-        return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        return { prompt_tokens: 0, completion_tokens: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0 };
     }
 
     const promptTokens = usageMetadata.promptTokenCount || 0;
@@ -258,6 +258,8 @@ export function transformGeminiUsageToOpenAI(usageMetadata: any): OpenAIUsage { 
     const openAIUsage: OpenAIUsage = {
         prompt_tokens: promptTokens,
         completion_tokens: visibleCompletionTokens < 0 ? 0 : visibleCompletionTokens, // Ensure not negative
+        input_tokens: promptTokens, // Map promptTokenCount to input_tokens
+        output_tokens: visibleCompletionTokens < 0 ? 0 : visibleCompletionTokens, // Map visibleCompletionTokens to output_tokens
         total_tokens: usageMetadata.totalTokenCount || 0,
     };
 

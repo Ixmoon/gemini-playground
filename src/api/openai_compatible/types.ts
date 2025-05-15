@@ -37,6 +37,8 @@ export interface OpenAIEmbeddingRequest {
 export interface OpenAIUsage {
     prompt_tokens: number;
     completion_tokens: number; // Actual visible output tokens
+    input_tokens: number; // Total input tokens
+    output_tokens: number; // Total output tokens
     total_tokens: number;
     output_tokens_details?: { // Added for reasoning tokens
         reasoning_tokens?: number;
