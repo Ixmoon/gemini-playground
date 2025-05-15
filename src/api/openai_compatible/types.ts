@@ -41,6 +41,9 @@ export interface OpenAIUsage {
     output_tokens_details?: { // Added for reasoning tokens
         reasoning_tokens?: number;
     };
+    input_tokens_details?: { // Added for cached tokens
+        cached_tokens?: number;
+    };
 }
 
 export interface GeminiCandidate {

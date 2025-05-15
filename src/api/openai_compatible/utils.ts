@@ -266,5 +266,13 @@ export function transformGeminiUsageToOpenAI(usageMetadata: any): OpenAIUsage { 
             reasoning_tokens: thoughtsTokens,
         };
     }
+
+    // Add input_tokens_details with cached_tokens if available
+    if (typeof usageMetadata.cachedContentTokenCount === 'number' && usageMetadata.cachedContentTokenCount >= 0) {
+        openAIUsage.input_tokens_details = {
+            cached_tokens: usageMetadata.cachedContentTokenCount,
+        };
+    }
+
     return openAIUsage;
 }
