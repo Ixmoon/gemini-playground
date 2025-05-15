@@ -246,7 +246,14 @@ export function transformGeminiUsageToOpenAI(usageMetadata: any): OpenAIUsage { 
     // candidatesTokenCount is NOT in the UsageMetadata provided by the user.
     // So, we must derive visible completion tokens from responseTokenCount and thoughtsTokenCount.
 
-    const visibleCompletionTokens = (usageMetadata.responseTokenCount || 0) - thoughtsTokens;
+    let visibleCompletionTokens: number;
+
+    if (typeof usageMetadata.candidatesTokenCount === 'number' && usageMetadata.candidatesTokenCount >= 0) {
+        visibleCompletionTokens = usageMetadata.candidatesTokenCount;
+    } else {
+        visibleCompletionTokens = (usageMetadata.responseTokenCount || 0) - thoughtsTokens;
+    }
+    
 
     const openAIUsage: OpenAIUsage = {
         prompt_tokens: promptTokens,

@@ -99,10 +99,14 @@ export async function handleOpenAIChatCompletion(
             const geminiStreamIterable = await generateSdxContentStream(apiKey, geminiParams);
             const geminiReadableStream = iterableToReadableStream(geminiStreamIterable);
             
+            const streamOptions = {
+                ...(openAIRequest.stream_options || {}),
+                include_usage: true // Force include_usage to true
+            };
             const transformer = new GeminiToOpenAIStreamTransformer(
                 id,
                 openAIRequest.model,
-                openAIRequest.stream_options
+                streamOptions
             );
 
             const openAIStream = geminiReadableStream
