@@ -257,24 +257,23 @@ export function transformGeminiUsageToOpenAI(usageMetadata: any): OpenAIUsage { 
 
     const openAIUsage: OpenAIUsage = {
         prompt_tokens: promptTokens,
+        input_tokens: promptTokens, // Set input_tokens
         completion_tokens: visibleCompletionTokens < 0 ? 0 : visibleCompletionTokens, // Ensure not negative
-        input_tokens: promptTokens, // Map promptTokenCount to input_tokens
-        output_tokens: visibleCompletionTokens < 0 ? 0 : visibleCompletionTokens, // Map visibleCompletionTokens to output_tokens
+        output_tokens: visibleCompletionTokens < 0 ? 0 : visibleCompletionTokens, // Set output_tokens
         total_tokens: usageMetadata.totalTokenCount || 0,
     };
 
-    if (thoughtsTokens > 0) {
-        openAIUsage.output_tokens_details = {
-            reasoning_tokens: thoughtsTokens,
-        };
-    }
-
-    // Add input_tokens_details with cached_tokens if available
+    // Add input_tokens_details if cachedContentTokenCount is available
     if (typeof usageMetadata.cachedContentTokenCount === 'number' && usageMetadata.cachedContentTokenCount >= 0) {
         openAIUsage.input_tokens_details = {
             cached_tokens: usageMetadata.cachedContentTokenCount,
         };
     }
 
+    if (thoughtsTokens > 0) {
+        openAIUsage.output_tokens_details = {
+            reasoning_tokens: thoughtsTokens,
+        };
+    }
     return openAIUsage;
 }
